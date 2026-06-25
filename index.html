@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>英语项目｜整合运营看板</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="main-shell">
+        <section id="importView" class="screen active import-screen">
+          <div class="import-shell">
+            <div class="hero-card import-hero-card">
+              <div class="import-hero-copy">
+                <div class="section-kicker">数据导入</div>
+                <h2>导入班级明细，开始经营分析</h2>
+                <p class="hero-copy">
+                  自动识别编码与分隔符，并校验核心字段。当前所有营期、大组、小组、班长分析，均基于班级明细统一聚合。
+                </p>
+                <div class="import-hero-meta">
+                  <span>本地运行</span>
+                  <span>自动校验</span>
+                  <span>统一口径聚合</span>
+                </div>
+              </div>
+              <div class="import-hero-side">
+                <div class="import-side-badge">导入要求</div>
+                <div class="import-side-title">仅需一份班级明细 CSV</div>
+                <div class="import-side-points">
+                  <div class="import-side-point">推荐使用最新导出的明细文件</div>
+                  <div class="import-side-point">系统会自动校验字段完整性</div>
+                  <div class="import-side-point">校验通过后可直接进入看板</div>
+                </div>
+                <button id="startAnalysisBtn" class="btn primary import-start-btn" type="button" disabled>开始分析</button>
+                <div class="minor-text">通过校验后可进入分析页面</div>
+              </div>
+            </div>
+
+            <div class="import-stage-grid">
+              <div class="panel upload-card import-upload-card">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">步骤 1 / 必选文件</div>
+                    <h3>上传班级数据明细</h3>
+                  </div>
+                  <span id="classStatusTag" class="status-chip neutral">未导入</span>
+                </div>
+                <div class="import-upload-copy">上传后系统会自动完成基础校验与预处理。</div>
+                <input id="fileClass" type="file" accept=".csv" />
+                <div id="classFileInfo" class="file-info">需要包含：营期、开营时间、月份、大组、小组、班级，以及班级级过程/转化/成本字段。</div>
+                <div class="import-field-pills">
+                  <span class="import-field-pill">营期</span>
+                  <span class="import-field-pill">开营时间</span>
+                  <span class="import-field-pill">月份</span>
+                  <span class="import-field-pill">大组 / 小组</span>
+                  <span class="import-field-pill">班级</span>
+                  <span class="import-field-pill">过程 / 转化 / 成本字段</span>
+                </div>
+              </div>
+
+              <div class="panel import-check-panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">步骤 2 / 校验反馈</div>
+                    <h3>导入检查</h3>
+                  </div>
+                  <span id="importSummaryTag" class="status-chip neutral">等待文件</span>
+                </div>
+                <div class="import-check-copy">上传后会展示文件状态、编码识别、分隔符识别和字段完整性检查。</div>
+                <div id="importChecks" class="check-grid import-check-grid"></div>
+                <div id="importErrors" class="alert-list import-alert-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="dashboardView" class="screen">
+          <div class="topbar">
+            <div>
+              <div class="section-kicker">分析结果</div>
+              <h2>策略运营分析工作台</h2>
+              <p id="summaryText" class="topbar-copy"></p>
+            </div>
+            <div class="topbar-actions">
+              <button id="exportCsvBtn" class="btn ghost" type="button">导出预处理数据</button>
+              <button id="backToImportBtn" class="btn ghost" type="button">重新导入文件</button>
+            </div>
+          </div>
+
+          <div class="panel filter-panel">
+            <div class="card-head compact">
+              <div>
+                <div class="section-kicker">全局筛选</div>
+                <h3>分析范围</h3>
+              </div>
+              <div class="filter-actions">
+                <span id="asOfText" class="minor-text"></span>
+                <button id="toggleFiltersBtn" class="btn ghost" type="button">收起筛选</button>
+                <button id="applyFiltersBtn" class="btn primary" type="button">应用筛选</button>
+              </div>
+            </div>
+            <div class="filters-grid">
+              <div>
+                <label>项目</label>
+                <div id="projectSelect" class="ms"></div>
+              </div>
+              <div>
+                <label>月份</label>
+                <div id="monthSelect" class="ms"></div>
+              </div>
+              <div>
+                <label>周</label>
+                <div id="weekSelect" class="ms"></div>
+              </div>
+              <div>
+                <label>营期</label>
+                <div id="campSelect" class="ms"></div>
+              </div>
+              <div>
+                <label>大组</label>
+                <div id="groupSelect" class="ms"></div>
+              </div>
+              <div>
+                <label>小组</label>
+                <div id="smallGroupSelect" class="ms"></div>
+              </div>
+            </div>
+          </div>
+
+          <nav class="tabs">
+            <button class="tab active" data-tab="overview" type="button">总览</button>
+            <button class="tab" data-tab="camp" type="button">营期分析</button>
+            <button class="tab" data-tab="group" type="button">大组分析</button>
+            <button class="tab" data-tab="small-group" type="button">小组分析</button>
+            <button class="tab" data-tab="class" type="button">班长分析</button>
+            <button class="tab" data-tab="quality" type="button">数据健康</button>
+          </nav>
+
+          <section class="tab-panel active" data-panel="overview">
+            <div class="metrics-grid" id="overviewMetrics"></div>
+            <div class="two-col">
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">经营节奏</div>
+                    <h3>月度经营总览</h3>
+                  </div>
+                </div>
+                <div id="overviewTrend" class="chart tall"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">风险诊断</div>
+                    <h3>异常清单</h3>
+                  </div>
+                </div>
+                <div id="anomalyList" class="stack-list"></div>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">策略动作</div>
+                    <h3>建议优先事项</h3>
+                  </div>
+                </div>
+                <div id="actionList" class="stack-list"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">风险排名</div>
+                    <h3>重点关注对象</h3>
+                  </div>
+                </div>
+                <div id="riskRanking" class="table-wrap"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="camp">
+            <div class="panel">
+              <div class="card-head compact">
+                <div>
+                  <div class="section-kicker">统一维度</div>
+                  <h3>营期分析视角切换</h3>
+                </div>
+                <div id="campViewDimensionSwitch" class="quick-switch compact"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">核心概览</div>
+                  <h3>核心指标概览</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">默认展示项目整体，可在表格内逐层展开查看大组、小组与班长。</div>
+              <div id="campOverviewTable" class="table-wrap"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">趋势总览</div>
+                  <h3>添加成本 / 添加产值 / ROI</h3>
+                </div>
+              </div>
+              <div id="campTrendCombo" class="chart tall"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">转化节奏</div>
+                  <h3>累计转率 + D3-D7 热力图</h3>
+                </div>
+              </div>
+              <div id="campCumConv" class="chart tall"></div>
+              <div class="chart-grid four-col chart-grid-gap-lg">
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 出单占比</div>
+                  <div id="campHmOrder" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 转率</div>
+                  <div id="campHmConv" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 待支付率</div>
+                  <div id="campHmPending" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 待支付转率</div>
+                  <div id="campHmPendingConv" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">关键指标趋势</div>
+                  <h3>按营期观察 3 个核心转化追踪维度</h3>
+                </div>
+              </div>
+              <div class="chart-grid three-col">
+                <div class="chart-card">
+                  <div class="chart-card-title">Day3 待支付率</div>
+                  <div id="trendDay3Pending" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">Day3 转率 + 出单占比</div>
+                  <div id="trendDay3ConvChase" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D6-D7 转率 + 出单占比</div>
+                  <div id="trendD6D7ConvChase" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">By-day 数据</div>
+                  <h3>过程数据（Day1-Day7）与转化数据（Day3-Day7）</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">过程数据</div>
+              <div class="chart-grid three-col" id="campProcessCharts"></div>
+              <div class="panel-subtitle">转化数据</div>
+              <div class="chart-grid three-col" id="campConversionCharts"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">保温分析</div>
+                  <h3>保温数据分析</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">默认展示项目整体，并支持逐层展开查看大组、小组与班长。</div>
+              <div id="campWarmOverviewTable" class="table-wrap"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="group">
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">分析 1</div>
+                  <h3>组间对比</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">对 ROI、人效、转率、添加产值、客单价、个销占比、待支付率、待支付转率进行横向对比。</div>
+              <div id="groupCompareMetrics" class="metrics-grid"></div>
+            </div>
+            <div class="two-col">
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">可视对比</div>
+                    <h3>大组关键指标热力图</h3>
+                  </div>
+                </div>
+                <div id="groupCompareHeatmap" class="chart tall"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">明细对比</div>
+                    <h3>大组出单节奏热力图</h3>
+                  </div>
+                  <div id="groupOrderRhythmSwitch" class="quick-switch compact"></div>
+                </div>
+                <div id="groupOrderRhythmHeatmap" class="chart tall"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">分析 2</div>
+                  <h3>组内趋势</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">按周观察各大组关键指标变化趋势，聚焦关键经营效率与转化质量。</div>
+              <div class="chart-grid three-col group-trend-grid">
+                <div class="chart-card">
+                  <div class="chart-card-title">ROI 趋势</div>
+                  <div id="groupTrendRoi" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">转率趋势</div>
+                  <div id="groupTrendConvRate" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">添加产值趋势</div>
+                  <div id="groupTrendAddRevenue" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">个销占比趋势</div>
+                  <div id="groupTrendIndividualShare" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">待支付率趋势</div>
+                  <div id="groupTrendPendingRate" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">待支付转率趋势</div>
+                  <div id="groupTrendPendingConv" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">人效趋势</div>
+                  <div id="groupTrendEfficiency" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">客单价趋势</div>
+                  <div id="groupTrendAov" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">转化追踪</div>
+                  <h3>按大组观察 3 个核心转化追踪维度</h3>
+                  <div class="panel-subtitle">支持点击多个大组进行对比</div>
+                </div>
+                <div id="groupFocusChaseSwitch" class="quick-switch compact"></div>
+              </div>
+              <div class="chart-grid three-col">
+                <div class="chart-card">
+                  <button class="btn ghost chart-zoom-btn" id="groupFocusTrendDay3PendingZoomBtn" type="button" data-action="open-chart-modal" data-chart="groupFocusTrendDay3Pending" data-title="Day3 待支付率">放大</button>
+                  <div class="chart-card-title">Day3 待支付率</div>
+                  <div id="groupFocusTrendDay3Pending" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <button class="btn ghost chart-zoom-btn" id="groupFocusTrendDay3ConvChaseZoomBtn" type="button" data-action="open-chart-modal" data-chart="groupFocusTrendDay3ConvChase" data-title="Day3 转率 + 出单占比">放大</button>
+                  <div class="chart-card-title">Day3 转率 + 出单占比</div>
+                  <div id="groupFocusTrendDay3ConvChase" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <button class="btn ghost chart-zoom-btn" id="groupFocusTrendD6D7ConvChaseZoomBtn" type="button" data-action="open-chart-modal" data-chart="groupFocusTrendD6D7ConvChase" data-title="D6-D7 转率 + 出单占比">放大</button>
+                  <div class="chart-card-title">D6-D7 转率 + 出单占比</div>
+                  <div id="groupFocusTrendD6D7ConvChase" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel entity-byday-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">By-day 数据</div>
+                  <h3>大组间过程数据（Day1-Day7）与转化数据（Day3-Day7）对比</h3>
+                  <div class="panel-subtitle">支持单独勾选营期，可查看单营期或多个营期聚合后的大组间对比。</div>
+                </div>
+                <div class="quick-switch-toolbar">
+                  <div class="quick-switch-actions">
+                    <button id="groupFocusByDaySelectAllBtn" class="btn ghost quick-action-btn" type="button">全选</button>
+                    <button id="groupFocusByDayClearBtn" class="btn ghost quick-action-btn" type="button">全部取消</button>
+                  </div>
+                  <div id="groupFocusByDaySwitch" class="quick-switch compact"></div>
+                </div>
+              </div>
+              <div class="panel-subtitle">过程数据</div>
+              <div class="chart-grid three-col entity-byday-grid" id="groupFocusProcessCharts"></div>
+              <div class="panel-subtitle">转化数据</div>
+              <div class="chart-grid three-col entity-byday-grid" id="groupFocusConversionCharts"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">趋势明细</div>
+                  <h3>大组周度趋势表</h3>
+                </div>
+              </div>
+              <div id="groupTrendTable" class="table-wrap"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="small-group">
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">分析 1</div>
+                  <h3>组间对比</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">对 ROI、人效、转率、添加产值、客单价、个销占比、待支付率、待支付转率进行横向对比。</div>
+              <div id="smallGroupCompareMetrics" class="metrics-grid"></div>
+            </div>
+            <div class="two-col">
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">可视对比</div>
+                    <h3>小组关键指标热力图</h3>
+                  </div>
+                </div>
+                <div id="smallGroupCompareHeatmap" class="chart tall"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">明细对比</div>
+                    <h3>小组出单节奏热力图</h3>
+                  </div>
+                  <div id="smallGroupOrderRhythmSwitch" class="quick-switch compact"></div>
+                </div>
+                <div id="smallGroupOrderRhythmHeatmap" class="chart tall"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">分析 2</div>
+                  <h3>组内趋势</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">按周观察各小组关键指标变化趋势，聚焦关键经营效率与转化质量。</div>
+              <div class="chart-grid three-col group-trend-grid">
+                <div class="chart-card">
+                  <div class="chart-card-title">ROI 趋势</div>
+                  <div id="smallGroupTrendRoi" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">转率趋势</div>
+                  <div id="smallGroupTrendConvRate" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">添加产值趋势</div>
+                  <div id="smallGroupTrendAddRevenue" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">个销占比趋势</div>
+                  <div id="smallGroupTrendIndividualShare" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">待支付率趋势</div>
+                  <div id="smallGroupTrendPendingRate" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">待支付转率趋势</div>
+                  <div id="smallGroupTrendPendingConv" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">人效趋势</div>
+                  <div id="smallGroupTrendEfficiency" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">客单价趋势</div>
+                  <div id="smallGroupTrendAov" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">转化追踪</div>
+                  <h3>按小组观察 3 个核心转化追踪维度</h3>
+                </div>
+                <div id="smallGroupFocusChaseSwitch" class="quick-switch compact"></div>
+              </div>
+              <div class="chart-grid three-col">
+                <div class="chart-card">
+                  <div class="chart-card-title">Day3 待支付率</div>
+                  <div id="smallGroupFocusTrendDay3Pending" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">Day3 转率 + 出单占比</div>
+                  <div id="smallGroupFocusTrendDay3ConvChase" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D6-D7 转率 + 出单占比</div>
+                  <div id="smallGroupFocusTrendD6D7ConvChase" class="chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel entity-byday-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">By-day 数据</div>
+                  <h3>小组间过程数据（Day1-Day7）与转化数据（Day3-Day7）对比</h3>
+                  <div class="panel-subtitle">支持单独勾选营期，可查看单营期或多个营期聚合后的小组间对比。</div>
+                </div>
+                <div class="quick-switch-toolbar">
+                  <div class="quick-switch-actions">
+                    <button id="smallGroupFocusByDaySelectAllBtn" class="btn ghost quick-action-btn" type="button">全选</button>
+                    <button id="smallGroupFocusByDayClearBtn" class="btn ghost quick-action-btn" type="button">全部取消</button>
+                  </div>
+                  <div id="smallGroupFocusByDaySwitch" class="quick-switch compact"></div>
+                </div>
+              </div>
+              <div class="panel-subtitle">过程数据</div>
+              <div class="chart-grid three-col entity-byday-grid" id="smallGroupFocusProcessCharts"></div>
+              <div class="panel-subtitle">转化数据</div>
+              <div class="chart-grid three-col entity-byday-grid" id="smallGroupFocusConversionCharts"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">趋势明细</div>
+                  <h3>小组周度趋势表</h3>
+                </div>
+              </div>
+              <div id="smallGroupTrendTable" class="table-wrap"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="class">
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">班长总览</div>
+                  <h3>班长经营概览</h3>
+                </div>
+              </div>
+              <div id="classMetrics" class="metrics-grid"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">能力分层</div>
+                  <h3>班长能力分层</h3>
+                </div>
+              </div>
+              <div class="chart-grid three-col class-tier-grid">
+                <div class="chart-card">
+                  <div class="chart-card-title">项目整体班长分层</div>
+                  <div id="classTierDonut" class="chart class-tier-chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">大组班长分层</div>
+                  <div id="classTierGroupChart" class="chart class-tier-chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">小组班长分层</div>
+                  <div id="classTierSmallGroupChart" class="chart class-tier-chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">能力分层扩展</div>
+                  <h3>能力分层关键指标对比</h3>
+                </div>
+                <button id="classTierCompareToggleBtn" class="btn ghost" type="button">展开</button>
+              </div>
+              <div id="classTierCompareBody" class="tier-compare-body hidden">
+                <div class="panel-subtitle">分层关键指标表</div>
+                <div id="classTierCompareTable" class="table-wrap"></div>
+                <div class="panel-subtitle">过程数据与转化数据对比-分层</div>
+                <div class="chart-grid three-col entity-byday-grid tier-byday-grid" id="classTierProcessCharts"></div>
+                <div class="chart-grid three-col entity-byday-grid tier-byday-grid" id="classTierConversionCharts"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">班长类型</div>
+                  <h3>班长类型</h3>
+                </div>
+              </div>
+              <div class="chart-grid three-col class-tier-grid">
+                <div class="chart-card">
+                  <div class="chart-card-title">项目整体班长类型</div>
+                  <div id="classTypeDonut" class="chart class-tier-chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">大组班长类型</div>
+                  <div id="classTypeGroupChart" class="chart class-tier-chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">小组班长类型</div>
+                  <div id="classTypeSmallGroupChart" class="chart class-tier-chart"></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">班长类型扩展</div>
+                  <h3>班长类型关键指标对比</h3>
+                </div>
+                <button id="classTypeCompareToggleBtn" class="btn ghost" type="button">展开</button>
+              </div>
+              <div id="classTypeCompareBody" class="tier-compare-body hidden">
+                <div class="panel-subtitle">类型关键指标表</div>
+                <div id="classTypeCompareTable" class="table-wrap"></div>
+                <div class="panel-subtitle">过程数据与转化数据对比-类型</div>
+                <div class="chart-grid three-col entity-byday-grid tier-byday-grid" id="classTypeProcessCharts"></div>
+                <div class="chart-grid three-col entity-byday-grid tier-byday-grid" id="classTypeConversionCharts"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">可视分布</div>
+                  <h3>班级 ROI 散点图</h3>
+                </div>
+              </div>
+              <div id="classRoiScatter" class="chart tall"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">周度热力图</div>
+                  <h3>班长 ROI 周维度热力图</h3>
+                </div>
+              </div>
+              <div class="panel-toolbar">
+                <input id="classHeatmapSearchInput" class="search-input" type="search" placeholder="搜索班长" />
+              </div>
+              <div id="classHeatmapSmallGroupSwitch" class="quick-switch"></div>
+              <div id="classWeeklyRoiHeatmap" class="chart tall"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">周度对比</div>
+                  <h3>班长添加产值周维度对比</h3>
+                </div>
+              </div>
+              <div class="panel-subtitle">大字显示添加产值，小字显示与同营期大盘产值均值的差值。</div>
+              <div id="classAddRevenueSmallGroupSwitch" class="quick-switch"></div>
+              <div id="classWeeklyAddRevenueTable" class="table-wrap"></div>
+            </div>
+            <div class="panel class-byday-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">By-day 数据</div>
+                  <h3>班长过程数据与转化数据对比</h3>
+                </div>
+              </div>
+              <div class="panel-toolbar split class-byday-toolbar">
+                <div class="toolbar-field">
+                  <label for="classByDayLeaderSelect">班长</label>
+                  <select id="classByDayLeaderSelect" class="toolbar-select"></select>
+                </div>
+                <div class="toolbar-field">
+                  <label for="classByDayCampSelect">营期</label>
+                  <select id="classByDayCampSelect" class="toolbar-select"></select>
+                </div>
+              </div>
+              <div id="classByDayHint" class="panel-subtitle"></div>
+              <div class="chart-grid three-col entity-byday-grid" id="classByDayProcessCharts"></div>
+              <div class="chart-grid three-col entity-byday-grid" id="classByDayConversionCharts"></div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">班长明细</div>
+                  <h3>班长关键数据</h3>
+                </div>
+              </div>
+              <div class="panel-toolbar split">
+                <input id="classTableSearchInput" class="search-input" type="search" placeholder="搜索班长" />
+              </div>
+              <div id="classTable" class="table-wrap"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-panel="quality">
+            <div class="metrics-grid" id="qualityMetrics"></div>
+            <div class="two-col">
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">字段健康</div>
+                    <h3>关键字段缺失情况</h3>
+                  </div>
+                </div>
+                <div id="qualityFieldTable" class="table-wrap"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">By-day 完整度</div>
+                    <h3>过程字段覆盖</h3>
+                  </div>
+                </div>
+                <div id="qualityDayTable" class="table-wrap"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">数据提示</div>
+                  <h3>读取与口径说明</h3>
+                </div>
+              </div>
+              <div id="qualityNotes" class="stack-list"></div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <div id="chartModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div id="chartModalTitle" class="modal-title">图表放大查看</div>
+          <button id="chartModalCloseBtn" class="btn ghost modal-close" type="button">关闭</button>
+        </div>
+        <div class="modal-body">
+          <div id="chartModalPlot" class="modal-chart"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
