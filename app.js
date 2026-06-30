@@ -49,6 +49,15 @@
     groupSelect: document.getElementById("groupSelect"),
     smallGroupSelect: document.getElementById("smallGroupSelect"),
     overviewMetrics: document.getElementById("overviewMetrics"),
+    projectCompareOverviewTable: document.getElementById("projectCompareOverviewTable"),
+    projectCompareCumConv: document.getElementById("projectCompareCumConv"),
+    projectCompareHmOrder: document.getElementById("projectCompareHmOrder"),
+    projectCompareHmConv: document.getElementById("projectCompareHmConv"),
+    projectCompareHmPending: document.getElementById("projectCompareHmPending"),
+    projectCompareHmPendingConv: document.getElementById("projectCompareHmPendingConv"),
+    projectCompareProcessCharts: document.getElementById("projectCompareProcessCharts"),
+    projectCompareConversionCharts: document.getElementById("projectCompareConversionCharts"),
+    projectCompareWarmOverviewTable: document.getElementById("projectCompareWarmOverviewTable"),
     anomalyList: document.getElementById("anomalyList"),
     actionList: document.getElementById("actionList"),
     riskRanking: document.getElementById("riskRanking"),
@@ -113,6 +122,8 @@
     smallGroupFocusProcessCharts: document.getElementById("smallGroupFocusProcessCharts"),
     smallGroupFocusConversionCharts: document.getElementById("smallGroupFocusConversionCharts"),
     smallGroupOrderRhythmSwitch: document.getElementById("smallGroupOrderRhythmSwitch"),
+    smallGroupRadarChart: document.getElementById("smallGroupRadarChart"),
+    smallGroupRadarTable: document.getElementById("smallGroupRadarTable"),
     classMetrics: document.getElementById("classMetrics"),
     classRoiScatter: document.getElementById("classRoiScatter"),
     classHeatmapSmallGroupSwitch: document.getElementById("classHeatmapSmallGroupSwitch"),
@@ -141,6 +152,14 @@
     classTypeCompareTable: document.getElementById("classTypeCompareTable"),
     classTypeProcessCharts: document.getElementById("classTypeProcessCharts"),
     classTypeConversionCharts: document.getElementById("classTypeConversionCharts"),
+    classFormatDonut: document.getElementById("classFormatDonut"),
+    classFormatGroupChart: document.getElementById("classFormatGroupChart"),
+    classFormatSmallGroupChart: document.getElementById("classFormatSmallGroupChart"),
+    classFormatCompareToggleBtn: document.getElementById("classFormatCompareToggleBtn"),
+    classFormatCompareBody: document.getElementById("classFormatCompareBody"),
+    classFormatCompareTable: document.getElementById("classFormatCompareTable"),
+    classFormatProcessCharts: document.getElementById("classFormatProcessCharts"),
+    classFormatConversionCharts: document.getElementById("classFormatConversionCharts"),
     classTable: document.getElementById("classTable"),
     classTableSearchInput: document.getElementById("classTableSearchInput"),
     chartModal: document.getElementById("chartModal"),
@@ -188,6 +207,8 @@
       campRhythmDimension: "camp",
       campByDayDimension: "camp",
       campViewDimension: "camp",
+      projectCompareOverviewExpanded: [],
+      projectCompareWarmOverviewExpanded: [],
       campOverviewExpanded: [],
       campWarmOverviewExpanded: [],
       groupFocus: null,
@@ -205,6 +226,7 @@
       classByDayCamp: "",
       classTierCompareCollapsed: true,
       classTypeCompareCollapsed: true,
+      classFormatCompareCollapsed: true,
       classTypeCompareExpanded: [],
       classTableSearch: "",
       classTableSort: "roiDesc",
@@ -1037,6 +1059,17 @@
     }
   }
 
+  const SMALL_GROUP_RADAR_METRICS = [
+    { key: "pendingRate", label: "待支付率", formatter: formatPct, better: "low", value: (item) => item.pendingRate },
+    { key: "pendingConv", label: "待支付转率", formatter: formatPct, better: "high", value: (item) => item.pendingConv },
+    { key: "individualShare", label: "个销占比", formatter: formatPct, better: "high", value: (item) => item.individualShare },
+    { key: "highImmerseRate", label: "高沉浸率", formatter: formatPct, better: "high", value: (item) => item.highImmerseRate },
+    { key: "roiCv", label: "组内变异系数", formatter: (value) => formatNum(value, 2), better: "low", value: (item) => item.roiCv },
+    { key: "tailLeaderShare", label: "尾部人次占比", formatter: formatPct, better: "low", value: (item) => item.tailLeaderShare },
+    { key: "personEfficiency", label: "人效", formatter: (value) => Number.isFinite(value) ? String(Math.round(value)) : "-", better: "high", value: (item) => item.personEfficiency },
+    { key: "day3ConvRate", label: "Day3转率", formatter: formatPct, better: "high", value: (item) => item.day3ConvRate }
+  ]
+
   function makeDrillButton(label, dataset = {}) {
     const encode = (value) => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     const attrs = Object.entries(dataset).map(([key, value]) => `data-${key}="${encode(value)}"`).join(" ")
@@ -1069,12 +1102,14 @@
     const raw = aggregateUnifiedRows(rows)
     const meta = currentMeta()
     const campId = scope.campId ?? String(raw[meta.campField] || "").trim()
+    const projectName = scope.projectName ?? labels.projectName ?? normalizeProjectName(raw[meta.projectField])
     const startDate = parseStartDate(firstNonEmpty(rows, ["_营期开营时间", meta.startField]))
     const status = computeStatus(startDate, state.filters.asOfDate)
     return {
       ...snapshotBase({
         type: scope.type || "group",
         campId,
+        projectName,
         groupName: labels.groupName || scope.groupName || null,
         month: normalizeMonth(scope.month, raw._营期月份, raw[meta.monthFieldClass], raw[meta.monthFieldCamp]),
         raw,
@@ -1960,8 +1995,10 @@
     const classes = scoped.classSnapshots
     dom.asOfText.textContent = `分析日期：${formatDate(state.filters.asOfDate)}`
     renderFilterPanelState()
-    dom.summaryText.textContent = `当前筛选范围内共有 ${camps.length} 个营期、${groups.length} 个大组分析对象、${smallGroups.length} 个小组分析对象、${classes.length} 个班级分析对象，建议先看总览识别风险，再下钻到营期页、大组页和班级页。`
+    const projectCount = uniq(scopedRows.map((row) => normalizeProjectName(row?.[state.model.meta.projectField]))).filter(Boolean).length
+    dom.summaryText.textContent = `当前筛选范围内共有 ${projectCount} 个项目、${camps.length} 个营期、${groups.length} 个大组分析对象、${smallGroups.length} 个小组分析对象、${classes.length} 个班级分析对象，建议先看总览识别风险，再下钻到项目对比、营期页、大组页和班级页。`
     renderOverview(camps, groups)
+    renderProjectCompareSection(camps, scopedRows)
     renderCampSection(camps, scopedRows)
     renderGroupSection(groups, classes)
     renderSmallGroupSection(smallGroups, classes)
@@ -2237,22 +2274,7 @@
       yaxis2: { title: "ROI", overlaying: "y", side: "right", color: PLOT_MUTED },
       shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y2", y0: ROI_TARGET, y1: ROI_TARGET, line: { color: "rgba(15,23,42,0.25)", dash: "dot" } }]
     }), plotConfig)
-
-    Plotly.newPlot("campCumConv", withValueLabels(dimensionItems.map((item) => {
-      let cumulative = 0
-      const xs = []
-      const ys = []
-      for (let day = 3; day <= 7; day += 1) {
-        const value = firstMetric(item.raw, item.supplement, [`day${day}转率`])
-        if (value === null) continue
-        cumulative += value
-        xs.push(`day${day}`)
-        ys.push(cumulative)
-      }
-      return { type: "scatter", mode: "lines+markers", name: item.dimensionLabel, x: xs, y: ys }
-    }).filter((trace) => trace.y.length), formatChartPercent), baseLayout({
-      yaxis: { title: "累计转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
-    }), plotConfig)
+    renderDimensionRhythmCharts("camp", dimensionItems)
 
     const axisLabels = dimensionItems.map((item) => item.dimensionLabel)
     const day3Pending = dimensionItems.map((item) => firstMetric(item.raw, item.supplement, ["day3待支付率", "待支付率"]))
@@ -2325,12 +2347,50 @@
       yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
     }), plotConfig)
 
-    renderHeatmap("campHmOrder", dimensionItems, (item, day) => orderShare(item, day), (value) => formatPct(value), false)
-    renderHeatmap("campHmConv", dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}转率`]), (value) => formatPct(value, 2), false)
-    renderHeatmap("campHmPending", dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付率`, "待支付率"]), (value) => formatPct(value, 2), false)
-    renderHeatmap("campHmPendingConv", dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付转率`]), (value) => formatPct(value, 2), false)
     renderByDayCharts(dom.campProcessCharts, dimensionItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.campConversionCharts, dimensionItems, CONVERSION_SPECS, false)
+  }
+
+  function renderProjectCompareSection(camps, scopedRows) {
+    const dimension = "project"
+    const dimensionItems = buildCampRhythmItems(camps, dimension)
+    renderCampOverviewTreeTable(
+      dom.projectCompareOverviewTable,
+      buildCampOverviewFlatRows(scopedRows, dimension, state.ui.projectCompareOverviewExpanded),
+      dimension,
+      false
+    )
+    renderCampOverviewTreeTable(
+      dom.projectCompareWarmOverviewTable,
+      buildCampOverviewFlatRows(scopedRows, dimension, state.ui.projectCompareWarmOverviewExpanded),
+      dimension,
+      true
+    )
+    renderDimensionRhythmCharts("projectCompare", dimensionItems)
+    renderByDayCharts(dom.projectCompareProcessCharts, dimensionItems, PROCESS_SPECS, false)
+    renderByDayCharts(dom.projectCompareConversionCharts, dimensionItems, CONVERSION_SPECS, false)
+  }
+
+  function renderDimensionRhythmCharts(prefix, dimensionItems) {
+    Plotly.newPlot(`${prefix}CumConv`, withValueLabels(dimensionItems.map((item) => {
+      let cumulative = 0
+      const xs = []
+      const ys = []
+      for (let day = 3; day <= 7; day += 1) {
+        const value = firstMetric(item.raw, item.supplement, [`day${day}转率`])
+        if (value === null) continue
+        cumulative += value
+        xs.push(`day${day}`)
+        ys.push(cumulative)
+      }
+      return { type: "scatter", mode: "lines+markers", name: item.dimensionLabel, x: xs, y: ys }
+    }).filter((trace) => trace.y.length), formatChartPercent), baseLayout({
+      yaxis: { title: "累计转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
+    }), plotConfig)
+    renderHeatmap(`${prefix}HmOrder`, dimensionItems, (item, day) => orderShare(item, day), (value) => formatPct(value), false)
+    renderHeatmap(`${prefix}HmConv`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}转率`]), (value) => formatPct(value, 2), false)
+    renderHeatmap(`${prefix}HmPending`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付率`, "待支付率"]), (value) => formatPct(value, 2), false)
+    renderHeatmap(`${prefix}HmPendingConv`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付转率`]), (value) => formatPct(value, 2), false)
   }
 
   function drillPathItems(drill) {
@@ -2575,10 +2635,16 @@
     return Array.from(groupBy(items, (item) => entityKey(kind, item)).entries()).map(([key, bucket]) => {
       const base = bucket[0] || {}
       const classRois = (classBuckets.get(key) || []).map((item) => item.metrics.roi)
+      const leaderRows = aggregateLeaderRows(classBuckets.get(key) || [])
+      const leaderRois = leaderRows.map((item) => item.roi)
       const roiStd = stdDev(classRois)
+      const roiMean = avg(leaderRois)
       const roiRange = valueRange(classRois)
       const addsTotal = sum(bucket.map((item) => item.metrics.adds))
       const convTotal = sum(bucket.map((item) => item.metrics.conv))
+      const aggregate = buildSnapshotAggregateItem(bucket, base.smallGroupName || base.groupName || "")
+      const tailLeaderTimes = (classBuckets.get(key) || []).filter((item) => Number.isFinite(item.metrics.roi) && item.metrics.roi < 0.5).length
+      const totalLeaderTimes = (classBuckets.get(key) || []).length
       return {
         key,
         entityName: entityDisplay(kind, base),
@@ -2587,7 +2653,10 @@
         campCount: uniq(bucket.map((item) => item.campId)).length,
         weekCount: uniq(bucket.map((item) => item.weekKey).filter(Boolean)).length,
         roiStd,
+        roiCv: Number.isFinite(roiStd) && Number.isFinite(roiMean) && roiMean !== 0 ? Math.abs(roiStd / roiMean) : null,
         roiRange,
+        highImmerseRate: normalizeRateLikeValue(firstMetric(aggregate?.raw, aggregate?.supplement, ["高沉浸率"])),
+        tailLeaderShare: ratio(tailLeaderTimes, totalLeaderTimes),
         day3OrderShare: ratio(sum(bucket.map((item) => {
           const conv = item.metrics.conv
           const share = orderShare(item, 3)
@@ -2756,6 +2825,12 @@
     { name: "老人", countKey: "老人数", ratioKey: "老人占比", color: "#8b5cf6" }
   ]
 
+  const CLASS_FORMAT_SPECS = [
+    { name: "小班", countKey: "小班数", ratioKey: "小班占比", color: "#38bdf8" },
+    { name: "中班", countKey: "中班数", ratioKey: "中班占比", color: "#f59e0b" },
+    { name: "大班", countKey: "大班数", ratioKey: "大班占比", color: "#8b5cf6" }
+  ]
+
   function buildLeaderExperienceLookup(classes) {
     return Array.from(groupBy(classes, leaderLookupKey).entries()).reduce((lookup, [key, bucket]) => {
       lookup.set(key, {
@@ -2848,6 +2923,17 @@
         ...aggregateGroupMetrics(bucket)
       }
     })
+  }
+
+  function normalizeClassFormat(value) {
+    if (/小班/.test(String(value || ""))) return "小班"
+    if (/中班/.test(String(value || ""))) return "中班"
+    if (/大班/.test(String(value || ""))) return "大班"
+    return ""
+  }
+
+  function classFormatOfItem(item) {
+    return normalizeClassFormat(item?.classType || rowClassType(item?.raw || {}) || "")
   }
 
   function classTableSearchMatch(item, keyword) {
@@ -3259,6 +3345,162 @@
     const plotItems = [...typeSeries, benchmark].filter(Boolean)
     renderByDayCharts(dom.classTypeProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classTypeConversionCharts, plotItems, CONVERSION_SPECS, false)
+  }
+
+  function buildClassFormatDistributionRows(classes, dimension) {
+    const labelFn = dimension === "group"
+      ? (item) => item.groupName || "未知大组"
+      : dimension === "smallGroup"
+        ? (item) => item.smallGroupName || "未知小组"
+        : () => "项目"
+    const keyFn = dimension === "group"
+      ? (item) => item.groupName || "未知大组"
+      : dimension === "smallGroup"
+        ? (item) => `${item.groupName || "未知大组"} / ${item.smallGroupName || "未知小组"}`
+        : () => "项目"
+    return Array.from(groupBy(classes.filter((item) => classFormatOfItem(item)), keyFn).entries()).map(([key, items]) => {
+      const base = items[0] || {}
+      const counts = Object.fromEntries(CLASS_FORMAT_SPECS.map((item) => [item.countKey, 0]))
+      items.forEach((item) => {
+        const format = classFormatOfItem(item)
+        const spec = CLASS_FORMAT_SPECS.find((candidate) => candidate.name === format)
+        if (spec) counts[spec.countKey] += 1
+      })
+      const total = CLASS_FORMAT_SPECS.reduce((acc, item) => acc + counts[item.countKey], 0)
+      return {
+        key,
+        label: labelFn(base),
+        classCount: total,
+        ...counts,
+        ...Object.fromEntries(CLASS_FORMAT_SPECS.map((item) => [item.ratioKey, ratio(counts[item.countKey], total)]))
+      }
+    }).sort((a, b) => (b.classCount || 0) - (a.classCount || 0) || a.label.localeCompare(b.label, "zh-CN"))
+  }
+
+  function renderClassFormatDonut(classes) {
+    if (!dom.classFormatDonut) return
+    const row = buildClassFormatDistributionRows(classes, "project")[0] || { classCount: 0, 小班数: 0, 中班数: 0, 大班数: 0 }
+    Plotly.newPlot(dom.classFormatDonut, [{
+      type: "pie",
+      hole: 0.62,
+      sort: false,
+      direction: "clockwise",
+      labels: CLASS_FORMAT_SPECS.map((item) => item.name),
+      values: CLASS_FORMAT_SPECS.map((item) => row[item.countKey] || 0),
+      marker: { colors: CLASS_FORMAT_SPECS.map((item) => item.color) },
+      text: CLASS_FORMAT_SPECS.map((item) => row[item.countKey] || 0).map((value, index) => {
+        const rate = ratio(value, row.classCount)
+        const label = CLASS_FORMAT_SPECS[index]?.name || ""
+        return value > 0 ? `${label}<br>${formatChartPercent(rate)}<br>${Math.round(value)}班` : ""
+      }),
+      texttemplate: "%{text}",
+      textposition: "inside",
+      textfont: { size: 11, color: "#f8fafc" },
+      hovertemplate: "%{label}<br>占比: %{percent}<br>班级数: %{value}<extra></extra>"
+    }], baseLayout({
+      margin: { l: 16, r: 16, t: 20, b: 20 },
+      showlegend: true,
+      legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.08, font: { color: PLOT_TEXT } },
+      annotations: [{
+        text: `班级总数<br>${Math.round(row.classCount || 0)}班`,
+        showarrow: false,
+        x: 0.5,
+        y: 0.5,
+        font: { size: 13, color: PLOT_TEXT }
+      }]
+    }), plotConfig)
+  }
+
+  function renderClassFormatStackedChart(host, rows) {
+    if (!host) return
+    Plotly.newPlot(host, CLASS_FORMAT_SPECS.map((spec) => ({
+      type: "bar",
+      name: spec.name,
+      x: rows.map((row) => row.label),
+      y: rows.map((row) => row[spec.ratioKey] || 0),
+      marker: { color: spec.color },
+      text: rows.map((row) => formatChartPercent(row[spec.ratioKey] || 0)),
+      textposition: "inside",
+      customdata: rows.map((row) => [row[spec.countKey] || 0, row.classCount || 0]),
+      hovertemplate: `${spec.name}<br>%{x}<br>占比: %{y:.1%}<br>班级数: %{customdata[0]} / %{customdata[1]}<extra></extra>`
+    })), baseLayout({
+      barmode: "stack",
+      margin: { l: 54, r: 16, t: 20, b: 100 },
+      xaxis: { tickangle: -30, automargin: true, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+      yaxis: { title: "班级占比", tickformat: ".0%", range: [0, 1], color: PLOT_MUTED, gridcolor: PLOT_GRID, rangemode: "tozero" }
+    }), plotConfig)
+  }
+
+  function renderClassFormatCharts(classes) {
+    renderClassFormatDonut(classes)
+    renderClassFormatStackedChart(dom.classFormatGroupChart, buildClassFormatDistributionRows(classes, "group"))
+    renderClassFormatStackedChart(dom.classFormatSmallGroupChart, buildClassFormatDistributionRows(classes, "smallGroup"))
+  }
+
+  function buildClassFormatCompareRows(classes) {
+    return CLASS_FORMAT_SPECS.map((spec) => spec.name).map((classFormat) => {
+      const bucket = classes.filter((item) => classFormatOfItem(item) === classFormat)
+      const aggregate = buildSnapshotAggregateItem(bucket, classFormat)
+      return {
+        classFormat,
+        classCount: bucket.length,
+        item: aggregate,
+        metrics: aggregate?.metrics || {},
+        day3OrderShare: dayOrderShareFromBucket(bucket, 3),
+        day4OrderShare: dayOrderShareFromBucket(bucket, 4),
+        day5OrderShare: dayOrderShareFromBucket(bucket, 5),
+        day6OrderShare: dayOrderShareFromBucket(bucket, 6),
+        day7OrderShare: dayOrderShareFromBucket(bucket, 7)
+      }
+    }).filter((row) => row.item)
+  }
+
+  function renderClassFormatCompareTable(rows) {
+    if (!dom.classFormatCompareTable) return
+    renderTable(dom.classFormatCompareTable, [
+      "班型", "班级数", "机器号数", "人效", "客单价", "添加人数", "转化人数",
+      "Day3占比", "Day4占比", "Day5占比", "Day6占比", "Day7占比",
+      "添加成本", "添加产值", "ROI", "转率", "个销占比", "待支付率", "待支付转率", "回复时长"
+    ], rows.map((row) => {
+      const metrics = row.metrics || {}
+      return [
+        row.classFormat,
+        Number.isFinite(row.classCount) ? String(Math.round(row.classCount)) : "-",
+        Number.isFinite(metrics.machineSlots) ? String(Math.round(metrics.machineSlots)) : "-",
+        Number.isFinite(metrics.personEfficiency) ? String(Math.round(metrics.personEfficiency)) : "-",
+        formatMoney(metrics.aov),
+        Number.isFinite(metrics.adds) ? String(Math.round(metrics.adds)) : "-",
+        Number.isFinite(metrics.conv) ? String(Math.round(metrics.conv)) : "-",
+        formatPct(row.day3OrderShare),
+        formatPct(row.day4OrderShare),
+        formatPct(row.day5OrderShare),
+        formatPct(row.day6OrderShare),
+        formatPct(row.day7OrderShare),
+        formatMoney(metrics.addCost),
+        formatMoney(metrics.addRevenue),
+        formatNum(metrics.roi, 2),
+        formatPct(metrics.convRate),
+        formatPct(metrics.individualShare),
+        formatPct(metrics.pendingRate),
+        formatPct(metrics.pendingConv),
+        formatNum(metrics.replyTime, 0)
+      ]
+    }))
+  }
+
+  function renderClassFormatCompareSection(classes) {
+    if (!dom.classFormatCompareBody || !dom.classFormatCompareToggleBtn) return
+    dom.classFormatCompareBody.classList.toggle("hidden", !!state.ui.classFormatCompareCollapsed)
+    dom.classFormatCompareToggleBtn.textContent = state.ui.classFormatCompareCollapsed ? "展开" : "收起"
+    if (state.ui.classFormatCompareCollapsed) return
+
+    const formatRows = buildClassFormatCompareRows(classes)
+    renderClassFormatCompareTable(formatRows)
+    const formatSeries = formatRows.map((row) => row.item ? { ...row.item, seriesName: row.classFormat } : null).filter(Boolean)
+    const benchmark = buildClassByDayBenchmarkItem(classes, "current")
+    const plotItems = [...formatSeries, benchmark].filter(Boolean)
+    renderByDayCharts(dom.classFormatProcessCharts, plotItems, PROCESS_SPECS, false)
+    renderByDayCharts(dom.classFormatConversionCharts, plotItems, CONVERSION_SPECS, false)
   }
 
   function renderClassByDaySection(classes) {
@@ -3773,6 +4015,21 @@
   }
 
   function buildCampRhythmItems(camps, dimension = "camp") {
+    if (dimension === "project") {
+      return Array.from(groupBy(camps, (item) => normalizeProjectName(item.projectName) || "默认项目").entries())
+        .map(([projectName, bucket]) => {
+          const aggregate = buildSnapshotAggregateItem(bucket, projectName, projectName)
+          return aggregate ? {
+            ...aggregate,
+            projectName,
+            dimensionKey: `project__${projectName}`,
+            dimensionLabel: projectName,
+            seriesName: projectName
+          } : null
+        })
+        .filter(Boolean)
+        .sort((a, b) => String(a.projectName || "").localeCompare(String(b.projectName || ""), "zh-CN"))
+    }
     if (dimension === "month") {
       return Array.from(groupBy(camps, (item) => item.month || "未知月份").entries())
         .map(([month, bucket]) => {
@@ -3818,12 +4075,21 @@
   }
 
   function campViewDimensionText(dimension) {
+    if (dimension === "project") return "项目"
     if (dimension === "month") return "月"
     if (dimension === "week") return "周"
     return "营期"
   }
 
   function campViewBucketFromRow(row, meta, dimension) {
+    if (dimension === "project") {
+      const projectName = normalizeProjectName(row[meta.projectField]) || "默认项目"
+      return {
+        key: `project__${projectName}`,
+        label: projectName,
+        sortValue: projectName
+      }
+    }
     if (dimension === "month") {
       const month = normalizeMonth(row[meta.monthFieldClass], row._营期月份)
       return {
@@ -3856,6 +4122,9 @@
     const snapshot = buildDrillSnapshot(rows, labels, {
       type: level === "dimension" ? "camp" : level,
       campId: level === "dimension" && dimension === "camp" ? label : (labels.campId || label),
+      projectName: level === "dimension" && dimension === "project"
+        ? normalizeProjectName(rows[0]?.[meta.projectField])
+        : (labels.projectName || null),
       month: level === "dimension" && dimension === "month"
         ? normalizeMonth(rows[0]?.[meta.monthFieldClass], rows[0]?._营期月份)
         : null
@@ -3950,7 +4219,7 @@
           ...info
         }
       })
-      .sort((a, b) => (a.bucketInfo.sortValue || Infinity) - (b.bucketInfo.sortValue || Infinity))
+      .sort((a, b) => compareOverviewBucket(a.bucketInfo, b.bucketInfo))
     const expanded = new Set(expandedKeys || [])
     const flattened = []
     const walk = (nodes) => {
@@ -3962,6 +4231,13 @@
     }
     walk(roots)
     return flattened
+  }
+
+  function compareOverviewBucket(a, b) {
+    const av = a?.sortValue
+    const bv = b?.sortValue
+    if (typeof av === "number" && typeof bv === "number") return av - bv
+    return String(a?.label || "").localeCompare(String(b?.label || ""), "zh-CN", { numeric: true })
   }
 
   function dataBarCell(value, formatter, maxValue, tone = "blue") {
@@ -4302,6 +4578,73 @@
       String(item.campCount),
       ...GROUP_COMPARE_METRICS.map((spec) => spec.formatter(spec.value(item)))
     ]))
+    if (kind === "smallGroup") renderSmallGroupRadarComparison(compareRows)
+  }
+
+  function normalizedMetricScore(value, values, better = "high") {
+    const valid = values.filter((item) => Number.isFinite(item))
+    if (!Number.isFinite(value) || !valid.length) return null
+    const maxValue = Math.max(...valid)
+    if (maxValue <= 0) return 0
+    return Math.max(0, Math.min(1, value / maxValue))
+  }
+
+  function renderSmallGroupRadarComparison(rows) {
+    if (!dom.smallGroupRadarChart || !dom.smallGroupRadarTable) return
+    if (!rows.length) {
+      dom.smallGroupRadarChart.innerHTML = ""
+      dom.smallGroupRadarTable.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
+      return
+    }
+    const indicators = SMALL_GROUP_RADAR_METRICS.map((item) => item.label)
+    const traces = rows.map((item) => {
+      const scores = SMALL_GROUP_RADAR_METRICS.map((metric) => normalizedMetricScore(
+        metric.value(item),
+        rows.map((row) => metric.value(row)),
+        metric.better
+      ))
+      return {
+        type: "scatterpolar",
+        mode: "lines+markers",
+        name: item.entityName,
+        r: [...scores, scores[0]].map((value) => Number.isFinite(value) ? value : 0),
+        theta: [...indicators, indicators[0]],
+        fill: "none",
+        opacity: 1,
+        line: { width: 2 },
+        marker: { size: 5 }
+      }
+    })
+    Plotly.newPlot(dom.smallGroupRadarChart, traces, {
+      margin: { l: 30, r: 30, t: 16, b: 20 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      legend: { orientation: "h", y: -0.12, x: 0, font: { size: 11, color: PLOT_MUTED } },
+      polar: {
+        bgcolor: "rgba(0,0,0,0)",
+        radialaxis: {
+          range: [0, 1],
+          tickvals: [0.25, 0.5, 0.75, 1],
+          ticktext: ["25", "50", "75", "100"],
+          color: PLOT_MUTED,
+          gridcolor: PLOT_GRID
+        },
+        angularaxis: {
+          color: PLOT_MUTED,
+          gridcolor: PLOT_GRID_LIGHT
+        }
+      }
+    }, plotConfig)
+
+    renderTable(dom.smallGroupRadarTable, [
+      "大组",
+      "小组",
+      ...SMALL_GROUP_RADAR_METRICS.map((item) => item.label)
+    ], rows.map((item) => [
+      item.groupName || "未知大组",
+      item.entityName,
+      ...SMALL_GROUP_RADAR_METRICS.map((metric) => metric.formatter(metric.value(item)))
+    ]))
   }
 
   function renderGroupSection(groups, classes = []) {
@@ -4334,6 +4677,8 @@
     renderClassTierCompareSection(rankedClasses)
     renderClassTypeCharts(rankedClasses)
     renderClassTypeCompareSection(rankedClasses)
+    renderClassFormatCharts(rankedClasses)
+    renderClassFormatCompareSection(rankedClasses)
     renderClassByDaySection(rankedClasses)
     const detailRows = buildClassDetailRows(rankedClasses)
     const keyword = String(state.ui.classTableSearch || "").trim().toLowerCase()
@@ -4701,6 +5046,31 @@
         else renderSmallGroupSection(scoped.smallGroupSnapshots, scoped.classSnapshots)
       })
     })
+    dom.projectCompareOverviewTable?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='camp-tree-toggle']")
+      if (!button || button.classList.contains("leaf")) return
+      const key = button.dataset.key || ""
+      const current = new Set(state.ui.projectCompareOverviewExpanded || [])
+      if (current.has(key)) current.delete(key)
+      else current.add(key)
+      state.ui.projectCompareOverviewExpanded = Array.from(current)
+      const scopedRows = getScopedUnifiedRows(null)
+      const scoped = buildSnapshotsFromRows(scopedRows, state.model.meta)
+      renderProjectCompareSection(scoped.campSnapshots, scopedRows)
+    })
+    dom.projectCompareWarmOverviewTable?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='camp-tree-toggle']")
+      if (!button || button.classList.contains("leaf")) return
+      const key = button.dataset.key || ""
+      const current = new Set(state.ui.projectCompareWarmOverviewExpanded || [])
+      if (current.has(key)) current.delete(key)
+      else current.add(key)
+      state.ui.projectCompareWarmOverviewExpanded = Array.from(current)
+      const scopedRows = getScopedUnifiedRows(null)
+      const scoped = buildSnapshotsFromRows(scopedRows, state.model.meta)
+      renderProjectCompareSection(scoped.campSnapshots, scopedRows)
+    })
+
     dom.campViewDimensionSwitch?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-action='camp-view-dimension']")
       if (!button) return
@@ -4804,6 +5174,11 @@
       const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
       renderClassSection(scoped.classSnapshots)
     })
+    dom.classFormatCompareToggleBtn?.addEventListener("click", () => {
+      state.ui.classFormatCompareCollapsed = !state.ui.classFormatCompareCollapsed
+      const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
+      renderClassSection(scoped.classSnapshots)
+    })
     dom.classTypeCompareTable?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-action='class-type-compare-toggle']")
       if (!button) return
@@ -4833,34 +5208,10 @@
       renderCampSection(scoped.campSnapshots, scopedRows)
     })
 
-    ;[
-      dom.campProcessCharts,
-      dom.campConversionCharts,
-      dom.groupFocusProcessCharts,
-      dom.groupFocusConversionCharts,
-      dom.smallGroupFocusProcessCharts,
-      dom.smallGroupFocusConversionCharts,
-      dom.classByDayProcessCharts,
-      dom.classByDayConversionCharts,
-      dom.classTierProcessCharts,
-      dom.classTierConversionCharts,
-      dom.classTypeProcessCharts,
-      dom.classTypeConversionCharts
-    ].forEach((host) => {
-      host?.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action='open-chart-modal']")
-        if (!button) return
-        openChartModal(button.dataset.chart, button.dataset.title)
-      })
-    })
-    ;[
-      document.getElementById("groupFocusTrendDay3PendingZoomBtn"),
-      document.getElementById("groupFocusTrendDay3ConvChaseZoomBtn"),
-      document.getElementById("groupFocusTrendD6D7ConvChaseZoomBtn")
-    ].forEach((button) => {
-      button?.addEventListener("click", () => {
-        openChartModal(button.dataset.chart, button.dataset.title)
-      })
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='open-chart-modal']")
+      if (!button) return
+      openChartModal(button.dataset.chart, button.dataset.title)
     })
 
     dom.toggleFiltersBtn?.addEventListener("click", () => {
