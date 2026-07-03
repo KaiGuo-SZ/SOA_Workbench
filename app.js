@@ -329,6 +329,18 @@
     }
   }
 
+  function createEmptyFilters() {
+    return {
+      asOfDate: toDateOnly(new Date()),
+      projects: [],
+      months: [],
+      weeks: [],
+      camps: [],
+      groups: [],
+      smallGroups: []
+    }
+  }
+
   function normalizeProjectName(value) {
     const text = String(value || "").trim()
     return text || "默认项目"
@@ -1410,6 +1422,8 @@
     const sourceProjectField = pickField(classFields, ["项目", "项目名称", "业务线", "项目组"])
     const groupField = pickField(classFields, ["大组", "组别", "部门", "分组"])
     const smallGroupField = pickField(classFields, ["小组"])
+    const leaderField = pickField(classFields, ["班长", "班主任", "班主任姓名", "班级负责人"])
+    const classNameField = pickField(classFields, ["班级", "班级名称", "班长"])
     const classField = pickField(classFields, ["班级", "班级名称", "班长"])
     if (!campField || !startField || !monthFieldClass || !groupField || !smallGroupField || !classField) {
       throw new Error("核心字段识别失败，请确认上传的是班级数据明细。")
@@ -1421,10 +1435,13 @@
       const smallGroupName = String(row[smallGroupField] || "").trim()
       const rawGroupName = normalizedGroupName(row[groupField])
       const backfilledGroupName = isMissingGroupName(rawGroupName) ? (smallGroupGroupLookup.get(smallGroupName) || rawGroupName) : rawGroupName
-      const cleanedClass = cleanClassName(row[classField])
+      const cleanedLeader = cleanClassName(leaderField ? row[leaderField] : row[classField])
+      const cleanedClass = cleanClassName(classNameField ? row[classNameField] : row[classField])
       return {
         ...row,
-        [classField]: cleanedClass,
+        [classField]: cleanClassName(row[classField]),
+        ...(leaderField ? { [leaderField]: cleanedLeader } : {}),
+        ...(classNameField ? { [classNameField]: cleanedClass } : {}),
         [groupField]: backfilledGroupName,
         [projectField]: normalizeProjectName(sourceProjectField ? row[sourceProjectField] : null)
       }
@@ -1452,7 +1469,8 @@
       const week = weekInfo(parsedStartDate)
       return {
         ...nextRow,
-        _标准班级: nextRow[classField],
+        _标准班长: leaderField ? nextRow[leaderField] : nextRow[classField],
+        _标准班级: classNameField ? nextRow[classNameField] : nextRow[classField],
         _预处理班型: normalizedType || "",
         机器号数: Number.isFinite(machineSlots) ? machineSlots : row["机器号数"],
         _开营周: week?.label || "",
@@ -1496,7 +1514,18 @@
       quality,
       anomalies,
       recommendations,
-      meta: { campField, startField, monthFieldCamp: monthFieldClass, monthFieldClass, projectField, groupField, smallGroupField, classField }
+      meta: {
+        campField,
+        startField,
+        monthFieldCamp: monthFieldClass,
+        monthFieldClass,
+        projectField,
+        groupField,
+        smallGroupField,
+        classField,
+        leaderField: leaderField || classField,
+        classNameField: classNameField || classField
+      }
     }
   }
 
@@ -1720,6 +1749,7 @@
       dom.importErrors.innerHTML = ""
       state.ui.monthDrill = null
       state.ui.campEntityDrill = null
+      state.model = null
       state.model = buildModel()
       initFilters()
       switchScreen("dashboard")
@@ -1734,6 +1764,57 @@
   function switchScreen(mode) {
     dom.importView.classList.toggle("active", mode === "import")
     dom.dashboardView.classList.toggle("active", mode === "dashboard")
+  }
+
+  function resetAnalysisSession({ clearUpload = false } = {}) {
+    state.model = null
+    if (clearUpload) state.uploads.class = null
+    state.filters = createEmptyFilters()
+    state.draftFilters = cloneFilters(state.filters)
+    Object.assign(state.ui, {
+      activeTab: "overview",
+      monthDrill: null,
+      campEntityDrill: null,
+      monthDrillMode: "path",
+      campEntityDrillMode: "path",
+      filterCollapsed: false,
+      campWarmDimension: "group",
+      campWarmTimeDimension: "camp",
+      campRhythmDimension: "camp",
+      campByDayDimension: "camp",
+      campViewDimension: "camp",
+      projectCompareOverviewExpanded: [],
+      projectCompareWarmOverviewExpanded: [],
+      campOverviewExpanded: [],
+      campWarmOverviewExpanded: [],
+      groupFocus: null,
+      groupFocusCompare: [],
+      groupByDayCamps: [],
+      groupByDayCampsManuallyCleared: false,
+      smallGroupFocus: null,
+      smallGroupByDayCamps: [],
+      smallGroupByDayCampsManuallyCleared: false,
+      groupRhythmMetric: "orderShare",
+      smallGroupRhythmMetric: "orderShare",
+      classHeatmapSmallGroup: "",
+      classHeatmapSearch: "",
+      classByDayLeader: "",
+      classByDayCamp: "",
+      classTierCompareCollapsed: true,
+      classTypeCompareCollapsed: true,
+      classFormatCompareCollapsed: true,
+      classTypeCompareExpanded: [],
+      classTableSearch: "",
+      classTableSort: "roiDesc",
+      classTierDimension: "project"
+    })
+    if (dom.fileClass) dom.fileClass.value = ""
+    if (dom.summaryText) dom.summaryText.textContent = ""
+    if (dom.importErrors) dom.importErrors.innerHTML = ""
+    document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "overview"))
+    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === "overview"))
+    renderFilterPanelState()
+    renderImportState()
   }
 
   function initFilters() {
@@ -1787,7 +1868,7 @@
     state.filters = cloneFilters(state.draftFilters)
   }
 
-  function filteredRowsForOptions(targetFilters, { ignoreWeeks = false, ignoreCamps = false, ignoreGroups = false, ignoreSmallGroups = false } = {}) {
+  function filteredRowsForOptions(targetFilters, { ignoreMonths = false, ignoreWeeks = false, ignoreCamps = false, ignoreGroups = false, ignoreSmallGroups = false } = {}) {
     const meta = currentMeta()
     const projectSet = new Set(targetFilters.projects)
     const monthSet = new Set(targetFilters.months)
@@ -1803,7 +1884,7 @@
       const groupName = String(row[meta.groupField] || "未知大组").trim() || "未知大组"
       const smallGroupName = String(row[meta.smallGroupField] || "未知小组").trim() || "未知小组"
       return (!projectSet.size || projectSet.has(projectName))
-        && (!monthSet.size || monthSet.has(month))
+        && (ignoreMonths || !monthSet.size || monthSet.has(month))
         && (ignoreWeeks || !weekSet.size || weekSet.has(weekKey))
         && (ignoreCamps || !campSet.size || campSet.has(campId))
         && (ignoreGroups || !groupSet.size || groupSet.has(groupName))
@@ -1813,7 +1894,7 @@
 
   function syncMonthOptions(targetFilters, { useDefault = false, forceAll = false } = {}) {
     const meta = currentMeta()
-    const rows = filteredRowsForOptions(targetFilters, { ignoreWeeks: true, ignoreCamps: true, ignoreGroups: true, ignoreSmallGroups: true })
+    const rows = filteredRowsForOptions(targetFilters, { ignoreMonths: true, ignoreWeeks: true, ignoreCamps: true, ignoreGroups: true, ignoreSmallGroups: true })
     const options = uniq(rows.map((row) => normalizeMonth(row[meta.monthFieldClass], row._营期月份)).filter((month) => month !== null)).sort((a, b) => a - b).map((month) => ({
       value: String(month),
       label: `${month}月`
@@ -4144,6 +4225,22 @@
     }
   }
 
+  function campOverviewLeaderName(row, meta = currentMeta()) {
+    return String(row?.[meta.leaderField] || row?.[meta.classField] || row?._标准班长 || "未知班长").trim() || "未知班长"
+  }
+
+  function campOverviewClassName(row, meta = currentMeta()) {
+    return String(row?.[meta.classNameField] || row?._标准班级 || row?.[meta.classField] || "未知班级").trim() || "未知班级"
+  }
+
+  function campOverviewNodeCanExpand(node) {
+    if (node.level === "dimension" || node.level === "group" || node.level === "smallGroup") return true
+    if (node.level !== "class") return false
+    const meta = currentMeta()
+    const classNames = uniq(node.rows.map((row) => campOverviewClassName(row, meta)).filter(Boolean))
+    return classNames.length >= 2
+  }
+
   function buildCampOverviewChildren(node, dimension) {
     const meta = currentMeta()
     if (node.level === "dimension") {
@@ -4182,19 +4279,46 @@
         .sort((a, b) => (b.snapshot.metrics.roi || -Infinity) - (a.snapshot.metrics.roi || -Infinity) || a.label.localeCompare(b.label, "zh-CN"))
     }
     if (node.level === "smallGroup") {
-      return Array.from(groupBy(node.rows, (row) => String(row[meta.classField] || "未知班长").trim() || "未知班长").entries())
-        .map(([className, bucket]) => {
-          const info = buildCampNodeMetricData(bucket, dimension, "class", className, { groupName: node.groupName, smallGroupName: node.smallGroupName, className })
+      return Array.from(groupBy(node.rows, (row) => campOverviewLeaderName(row, meta)).entries())
+        .map(([leaderName, bucket]) => {
+          const info = buildCampNodeMetricData(bucket, dimension, "class", leaderName, { groupName: node.groupName, smallGroupName: node.smallGroupName, className: leaderName })
           return {
-            key: `${node.key}__class__${className}`,
+            key: `${node.key}__class__${leaderName}`,
             parentKey: node.key,
             level: "class",
-            label: className,
+            label: leaderName,
             rows: bucket,
             groupName: node.groupName,
             smallGroupName: node.smallGroupName,
-            className,
+            className: leaderName,
             depth: 3,
+            ...info
+          }
+        })
+        .sort((a, b) => (b.snapshot.metrics.roi || -Infinity) - (a.snapshot.metrics.roi || -Infinity) || a.label.localeCompare(b.label, "zh-CN"))
+    }
+    if (node.level === "class") {
+      const classBuckets = Array.from(groupBy(node.rows, (row) => campOverviewClassName(row, meta)).entries())
+        .filter(([className]) => !!String(className || "").trim())
+      if (classBuckets.length < 2) return []
+      return classBuckets
+        .map(([classDetailName, bucket]) => {
+          const info = buildCampNodeMetricData(bucket, dimension, "classDetail", classDetailName, {
+            groupName: node.groupName,
+            smallGroupName: node.smallGroupName,
+            className: classDetailName
+          })
+          return {
+            key: `${node.key}__class-detail__${classDetailName}`,
+            parentKey: node.key,
+            level: "classDetail",
+            label: classDetailName,
+            rows: bucket,
+            groupName: node.groupName,
+            smallGroupName: node.smallGroupName,
+            className: node.className,
+            classDetailName,
+            depth: 4,
             ...info
           }
         })
@@ -4224,7 +4348,7 @@
     const flattened = []
     const walk = (nodes) => {
       nodes.forEach((node) => {
-        const hasChildren = node.level === "dimension" || node.level === "group" || node.level === "smallGroup"
+        const hasChildren = campOverviewNodeCanExpand(node)
         flattened.push({ ...node, hasChildren, expanded: hasChildren && expanded.has(node.key) })
         if (hasChildren && expanded.has(node.key)) walk(buildCampOverviewChildren(node, dimension))
       })
@@ -5281,7 +5405,10 @@
   dom.fileClass.addEventListener("change", (event) => onFileChange("class", event))
   dom.startAnalysisBtn.addEventListener("click", onStartAnalysis)
   dom.exportCsvBtn.addEventListener("click", exportPreprocessedCsv)
-  dom.backToImportBtn.addEventListener("click", () => switchScreen("import"))
+  dom.backToImportBtn.addEventListener("click", () => {
+    resetAnalysisSession({ clearUpload: true })
+    switchScreen("import")
+  })
   dom.applyFiltersBtn?.addEventListener("click", applyFilters)
   window.addEventListener("resize", resizeVisiblePlots)
   bindTabs()
