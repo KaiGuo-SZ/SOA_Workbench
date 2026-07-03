@@ -1436,12 +1436,14 @@
       const rawGroupName = normalizedGroupName(row[groupField])
       const backfilledGroupName = isMissingGroupName(rawGroupName) ? (smallGroupGroupLookup.get(smallGroupName) || rawGroupName) : rawGroupName
       const cleanedLeader = cleanClassName(leaderField ? row[leaderField] : row[classField])
+      const rawClassDisplay = String(classNameField ? row[classNameField] : row[classField] || "").trim()
       const cleanedClass = cleanClassName(classNameField ? row[classNameField] : row[classField])
       return {
         ...row,
         [classField]: cleanClassName(row[classField]),
         ...(leaderField ? { [leaderField]: cleanedLeader } : {}),
         ...(classNameField ? { [classNameField]: cleanedClass } : {}),
+        _原始班级: rawClassDisplay,
         [groupField]: backfilledGroupName,
         [projectField]: normalizeProjectName(sourceProjectField ? row[sourceProjectField] : null)
       }
@@ -4230,7 +4232,7 @@
   }
 
   function campOverviewClassName(row, meta = currentMeta()) {
-    return String(row?.[meta.classNameField] || row?._标准班级 || row?.[meta.classField] || "未知班级").trim() || "未知班级"
+    return String(row?._原始班级 || row?.[meta.classNameField] || row?._标准班级 || row?.[meta.classField] || "未知班级").trim() || "未知班级"
   }
 
   function campOverviewNodeCanExpand(node) {
