@@ -305,6 +305,10 @@
       next.textfont = { size: 10, color: PLOT_MUTED }
       next.cliponaxis = false
       next.textposition = trace.type === "bar" ? "outside" : "top center"
+      if (trace.type === "scatter") {
+        const mode = String(trace.mode || "lines+markers")
+        next.mode = mode.includes("text") ? mode : `${mode}+text`
+      }
       return next
     })
   }
@@ -3019,15 +3023,24 @@
     return normalizeClassFormat(item?.classType || rowClassType(item?.raw || {}) || "")
   }
 
-  function classTableSearchMatch(item, keyword) {
-    if (!keyword) return true
+  function splitBatchSearchKeywords(value) {
+    return uniq(String(value || "")
+      .toLowerCase()
+      .split(/[\s,，、;；|]+/)
+      .map((item) => item.trim())
+      .filter(Boolean))
+  }
+
+  function classTableSearchMatch(item, keywords) {
+    const keywordList = Array.isArray(keywords) ? keywords : splitBatchSearchKeywords(keywords)
+    if (!keywordList.length) return true
     const haystack = [
       item.className,
       item.smallGroupName,
       item.groupName,
       item.campId
     ].map((value) => String(value || "").toLowerCase()).join(" ")
-    return haystack.includes(keyword)
+    return keywordList.some((keyword) => haystack.includes(keyword))
   }
 
   function buildClassDetailRows(classes) {
@@ -3820,10 +3833,10 @@
     if (dom.classHeatmapSearchInput && dom.classHeatmapSearchInput.value !== state.ui.classHeatmapSearch) {
       dom.classHeatmapSearchInput.value = state.ui.classHeatmapSearch
     }
-    const keyword = String(state.ui.classHeatmapSearch || "").trim().toLowerCase()
+    const keywords = splitBatchSearchKeywords(state.ui.classHeatmapSearch)
     const rows = buildLeaderWeeklyHeatmapRows(classes).filter((item) => {
       if (activeSmallGroup && item.smallGroupName !== activeSmallGroup) return false
-      return classTableSearchMatch(item, keyword)
+      return classTableSearchMatch(item, keywords)
     })
     const weekRows = Array.from(groupBy(rows, (item) => item.weekKey).values()).map((bucket) => bucket[0]).sort((a, b) => (a.weekStartDate?.getTime() || 0) - (b.weekStartDate?.getTime() || 0))
     if (!rows.length || !weekRows.length) {
@@ -3898,7 +3911,7 @@
 
   function renderClassWeeklyAddRevenueTable(classes) {
     if (!dom.classWeeklyAddRevenueTable) return
-    const keyword = String(state.ui.classHeatmapSearch || "").trim().toLowerCase()
+    const keywords = splitBatchSearchKeywords(state.ui.classHeatmapSearch)
     const activeSmallGroup = state.ui.classHeatmapSmallGroup || ""
     const campBenchmarks = new Map()
     groupBy(classes, (item) => item.campId || "").forEach((bucket, campId) => {
@@ -3908,7 +3921,7 @@
     })
     const rows = buildLeaderWeeklyHeatmapRows(classes).filter((item) => {
       if (activeSmallGroup && item.smallGroupName !== activeSmallGroup) return false
-      return classTableSearchMatch(item, keyword)
+      return classTableSearchMatch(item, keywords)
     })
     const weekRows = Array.from(groupBy(rows, (item) => item.weekKey).values())
       .map((bucket) => bucket[0])
@@ -3920,7 +3933,7 @@
     const weekOrder = weekRows.map((item) => item.weekKey)
     const leaderRateMap = new Map(Array.from(groupBy(classes.filter((item) => {
       if (activeSmallGroup && item.smallGroupName !== activeSmallGroup) return false
-      return classTableSearchMatch(item, keyword)
+      return classTableSearchMatch(item, keywords)
     }), (item) => `${item.groupName || "未知大组"} / ${item.smallGroupName || "未知小组"} / ${item.className || "未知班长"}`).entries()).map(([pathLabel, bucket]) => {
       const highCount = bucket.filter((item) => {
         const benchmark = campBenchmarks.get(item.campId || "")
@@ -4807,8 +4820,8 @@
     renderClassFormatCompareSection(rankedClasses)
     renderClassByDaySection(rankedClasses)
     const detailRows = buildClassDetailRows(rankedClasses)
-    const keyword = String(state.ui.classTableSearch || "").trim().toLowerCase()
-    const filteredDetailRows = detailRows.filter((item) => classTableSearchMatch(item, keyword))
+    const keywords = splitBatchSearchKeywords(state.ui.classTableSearch)
+    const filteredDetailRows = detailRows.filter((item) => classTableSearchMatch(item, keywords))
     const activeSort = /^(roi|conv|camp)(Asc|Desc)$/.test(state.ui.classTableSort) ? state.ui.classTableSort : "roiDesc"
     state.ui.classTableSort = activeSort
     if (dom.classTableSearchInput && dom.classTableSearchInput.value !== state.ui.classTableSearch) {
