@@ -3695,21 +3695,34 @@
       .filter((item) => classTableSearchMatch(item, keywords))
       .slice()
       .sort((a, b) => (b.metrics.addRevenue ?? -Infinity) - (a.metrics.addRevenue ?? -Infinity) || String(a.className || "").localeCompare(String(b.className || ""), "zh-CN"))
+    const leaderNameCounts = compareItems.reduce((map, item) => {
+      const key = String(item.className || "未知班长").trim() || "未知班长"
+      map.set(key, (map.get(key) || 0) + 1)
+      return map
+    }, new Map())
+    const plotItems = compareItems.map((item) => {
+      const leaderName = String(item.className || "未知班长").trim() || "未知班长"
+      const needsSuffix = (leaderNameCounts.get(leaderName) || 0) > 1
+      return {
+        ...item,
+        seriesName: needsSuffix ? `${leaderName}（${item.smallGroupName || "未知小组"}）` : leaderName
+      }
+    })
 
     if (dom.classCompareByDayHint) {
       dom.classCompareByDayHint.textContent = keywords.length
-        ? `当前查看 ${selectedCamp} 同营期班长横向对比，已命中 ${compareItems.length} 位班长。`
-        : `当前查看 ${selectedCamp} 同营期全部 ${compareItems.length} 位班长的横向对比。`
+        ? `当前查看 ${selectedCamp} 同营期班长横向对比，已命中 ${plotItems.length} 位班长。`
+        : `当前查看 ${selectedCamp} 同营期全部 ${plotItems.length} 位班长的横向对比。`
     }
 
-    if (!compareItems.length) {
+    if (!plotItems.length) {
       dom.classCompareByDayProcessCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
       dom.classCompareByDayConversionCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
       return
     }
 
-    renderByDayCharts(dom.classCompareByDayProcessCharts, compareItems, PROCESS_SPECS, false)
-    renderByDayCharts(dom.classCompareByDayConversionCharts, compareItems, CONVERSION_SPECS, false)
+    renderByDayCharts(dom.classCompareByDayProcessCharts, plotItems, PROCESS_SPECS, false)
+    renderByDayCharts(dom.classCompareByDayConversionCharts, plotItems, CONVERSION_SPECS, false)
   }
 
   function buildLeaderTierRows(classes, dimension = "project") {
