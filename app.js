@@ -136,6 +136,11 @@
     classByDayHint: document.getElementById("classByDayHint"),
     classByDayProcessCharts: document.getElementById("classByDayProcessCharts"),
     classByDayConversionCharts: document.getElementById("classByDayConversionCharts"),
+    classCompareByDayCampSelect: document.getElementById("classCompareByDayCampSelect"),
+    classCompareByDaySearchInput: document.getElementById("classCompareByDaySearchInput"),
+    classCompareByDayHint: document.getElementById("classCompareByDayHint"),
+    classCompareByDayProcessCharts: document.getElementById("classCompareByDayProcessCharts"),
+    classCompareByDayConversionCharts: document.getElementById("classCompareByDayConversionCharts"),
     classTierDonut: document.getElementById("classTierDonut"),
     classTierGroupChart: document.getElementById("classTierGroupChart"),
     classTierSmallGroupChart: document.getElementById("classTierSmallGroupChart"),
@@ -224,6 +229,8 @@
       classHeatmapSearch: "",
       classByDayLeader: "",
       classByDayCamp: "",
+      classCompareByDayCamp: "",
+      classCompareByDaySearch: "",
       classTierCompareCollapsed: true,
       classTypeCompareCollapsed: true,
       classFormatCompareCollapsed: true,
@@ -1806,6 +1813,8 @@
       classHeatmapSearch: "",
       classByDayLeader: "",
       classByDayCamp: "",
+      classCompareByDayCamp: "",
+      classCompareByDaySearch: "",
       classTierCompareCollapsed: true,
       classTypeCompareCollapsed: true,
       classFormatCompareCollapsed: true,
@@ -3653,6 +3662,56 @@
     renderByDayCharts(dom.classByDayConversionCharts, plotItems, CONVERSION_SPECS, false)
   }
 
+  function renderClassCompareByDaySection(classes) {
+    const campMeta = new Map()
+    classes.forEach((item) => {
+      if (!item.campId || campMeta.has(item.campId)) return
+      campMeta.set(item.campId, item.startDate || null)
+    })
+    const campOptions = Array.from(campMeta.entries()).sort((a, b) => {
+      const ta = a[1] && Number.isFinite(a[1].getTime()) ? a[1].getTime() : -Infinity
+      const tb = b[1] && Number.isFinite(b[1].getTime()) ? b[1].getTime() : -Infinity
+      return tb - ta || String(a[0]).localeCompare(String(b[0]), "zh-CN", { numeric: true })
+    }).map(([campId]) => ({ value: campId, label: campId }))
+    const selectedCamp = campOptions.some((item) => item.value === state.ui.classCompareByDayCamp)
+      ? state.ui.classCompareByDayCamp
+      : (campOptions[0]?.value || "")
+    state.ui.classCompareByDayCamp = selectedCamp
+    setSelectOptions(dom.classCompareByDayCampSelect, campOptions, selectedCamp)
+    if (dom.classCompareByDaySearchInput && dom.classCompareByDaySearchInput.value !== state.ui.classCompareByDaySearch) {
+      dom.classCompareByDaySearchInput.value = state.ui.classCompareByDaySearch
+    }
+    if (!selectedCamp) {
+      if (dom.classCompareByDayHint) dom.classCompareByDayHint.textContent = "当前筛选范围内暂无可用于同营期班长对比的数据。"
+      if (dom.classCompareByDayCampSelect) dom.classCompareByDayCampSelect.innerHTML = ""
+      dom.classCompareByDayProcessCharts.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
+      dom.classCompareByDayConversionCharts.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
+      return
+    }
+
+    const keywords = splitBatchSearchKeywords(state.ui.classCompareByDaySearch)
+    const compareItems = classes
+      .filter((item) => item.campId === selectedCamp)
+      .filter((item) => classTableSearchMatch(item, keywords))
+      .slice()
+      .sort((a, b) => (b.metrics.addRevenue ?? -Infinity) - (a.metrics.addRevenue ?? -Infinity) || String(a.className || "").localeCompare(String(b.className || ""), "zh-CN"))
+
+    if (dom.classCompareByDayHint) {
+      dom.classCompareByDayHint.textContent = keywords.length
+        ? `当前查看 ${selectedCamp} 同营期班长横向对比，已命中 ${compareItems.length} 位班长。`
+        : `当前查看 ${selectedCamp} 同营期全部 ${compareItems.length} 位班长的横向对比。`
+    }
+
+    if (!compareItems.length) {
+      dom.classCompareByDayProcessCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
+      dom.classCompareByDayConversionCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
+      return
+    }
+
+    renderByDayCharts(dom.classCompareByDayProcessCharts, compareItems, PROCESS_SPECS, false)
+    renderByDayCharts(dom.classCompareByDayConversionCharts, compareItems, CONVERSION_SPECS, false)
+  }
+
   function buildLeaderTierRows(classes, dimension = "project") {
     const labelFn = dimension === "group"
       ? (item) => item.groupName || "未知大组"
@@ -4819,6 +4878,7 @@
     renderClassFormatCharts(rankedClasses)
     renderClassFormatCompareSection(rankedClasses)
     renderClassByDaySection(rankedClasses)
+    renderClassCompareByDaySection(rankedClasses)
     const detailRows = buildClassDetailRows(rankedClasses)
     const keywords = splitBatchSearchKeywords(state.ui.classTableSearch)
     const filteredDetailRows = detailRows.filter((item) => classTableSearchMatch(item, keywords))
@@ -5300,6 +5360,16 @@
     })
     dom.classByDayCampSelect?.addEventListener("change", (event) => {
       state.ui.classByDayCamp = event.target.value || ""
+      const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
+      renderClassSection(scoped.classSnapshots)
+    })
+    dom.classCompareByDayCampSelect?.addEventListener("change", (event) => {
+      state.ui.classCompareByDayCamp = event.target.value || ""
+      const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
+      renderClassSection(scoped.classSnapshots)
+    })
+    dom.classCompareByDaySearchInput?.addEventListener("input", (event) => {
+      state.ui.classCompareByDaySearch = event.target.value || ""
       const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
       renderClassSection(scoped.classSnapshots)
     })
