@@ -29,6 +29,12 @@
     { key: "pendingConv", title: "待支付转率（day3待支付转率-day7待支付转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}待支付转率`], tickformat: ".1%" }
   ]
 
+  const DECAY_SPECS = [
+    { key: "attendDecay", title: "到播衰减", dayStart: 1, dayEnd: 5, field: (d) => `day${d}到播`, tickformat: ".1%" },
+    { key: "retentionDecay", title: "留存衰减", dayStart: 1, dayEnd: 5, field: (d) => `day${d}留存`, tickformat: ".1%" },
+    { key: "homeworkDecay", title: "晨读衰减", dayStart: 1, dayEnd: 5, field: (d) => `day${d}晨读`, tickformat: ".1%" }
+  ]
+
   const dom = {
     importView: document.getElementById("importView"),
     dashboardView: document.getElementById("dashboardView"),
@@ -60,6 +66,7 @@
     projectCompareHmPendingConv: document.getElementById("projectCompareHmPendingConv"),
     projectCompareProcessCharts: document.getElementById("projectCompareProcessCharts"),
     projectCompareConversionCharts: document.getElementById("projectCompareConversionCharts"),
+    projectCompareDecayCharts: document.getElementById("projectCompareDecayCharts"),
     projectCompareWarmOverviewTable: document.getElementById("projectCompareWarmOverviewTable"),
     anomalyList: document.getElementById("anomalyList"),
     actionList: document.getElementById("actionList"),
@@ -104,6 +111,7 @@
     campEntityDrillSmallGroupFilter: document.getElementById("campEntityDrillSmallGroupFilter"),
     campProcessCharts: document.getElementById("campProcessCharts"),
     campConversionCharts: document.getElementById("campConversionCharts"),
+    campDecayCharts: document.getElementById("campDecayCharts"),
     campRhythmDimensionSwitch: document.getElementById("campRhythmDimensionSwitch"),
     campByDayDimensionSwitch: document.getElementById("campByDayDimensionSwitch"),
     campHmPendingConv: document.getElementById("campHmPendingConv"),
@@ -113,6 +121,7 @@
     groupFocusByDayClearBtn: document.getElementById("groupFocusByDayClearBtn"),
     groupFocusProcessCharts: document.getElementById("groupFocusProcessCharts"),
     groupFocusConversionCharts: document.getElementById("groupFocusConversionCharts"),
+    groupFocusDecayCharts: document.getElementById("groupFocusDecayCharts"),
     groupOrderRhythmSwitch: document.getElementById("groupOrderRhythmSwitch"),
     campWarmTimeDimensionSwitch: document.getElementById("campWarmTimeDimensionSwitch"),
     campWarmDimensionSwitch: document.getElementById("campWarmDimensionSwitch"),
@@ -124,6 +133,7 @@
     smallGroupFocusByDayClearBtn: document.getElementById("smallGroupFocusByDayClearBtn"),
     smallGroupFocusProcessCharts: document.getElementById("smallGroupFocusProcessCharts"),
     smallGroupFocusConversionCharts: document.getElementById("smallGroupFocusConversionCharts"),
+    smallGroupFocusDecayCharts: document.getElementById("smallGroupFocusDecayCharts"),
     smallGroupOrderRhythmSwitch: document.getElementById("smallGroupOrderRhythmSwitch"),
     smallGroupRadarChart: document.getElementById("smallGroupRadarChart"),
     smallGroupRadarTable: document.getElementById("smallGroupRadarTable"),
@@ -139,11 +149,13 @@
     classByDayHint: document.getElementById("classByDayHint"),
     classByDayProcessCharts: document.getElementById("classByDayProcessCharts"),
     classByDayConversionCharts: document.getElementById("classByDayConversionCharts"),
+    classByDayDecayCharts: document.getElementById("classByDayDecayCharts"),
     classCompareByDayCampSelect: document.getElementById("classCompareByDayCampSelect"),
     classCompareByDaySearchInput: document.getElementById("classCompareByDaySearchInput"),
     classCompareByDayHint: document.getElementById("classCompareByDayHint"),
     classCompareByDayProcessCharts: document.getElementById("classCompareByDayProcessCharts"),
     classCompareByDayConversionCharts: document.getElementById("classCompareByDayConversionCharts"),
+    classCompareByDayDecayCharts: document.getElementById("classCompareByDayDecayCharts"),
     classTierDonut: document.getElementById("classTierDonut"),
     classTierGroupChart: document.getElementById("classTierGroupChart"),
     classTierSmallGroupChart: document.getElementById("classTierSmallGroupChart"),
@@ -152,6 +164,7 @@
     classTierCompareTable: document.getElementById("classTierCompareTable"),
     classTierProcessCharts: document.getElementById("classTierProcessCharts"),
     classTierConversionCharts: document.getElementById("classTierConversionCharts"),
+    classTierDecayCharts: document.getElementById("classTierDecayCharts"),
     classTypeDonut: document.getElementById("classTypeDonut"),
     classTypeGroupChart: document.getElementById("classTypeGroupChart"),
     classTypeSmallGroupChart: document.getElementById("classTypeSmallGroupChart"),
@@ -160,6 +173,7 @@
     classTypeCompareTable: document.getElementById("classTypeCompareTable"),
     classTypeProcessCharts: document.getElementById("classTypeProcessCharts"),
     classTypeConversionCharts: document.getElementById("classTypeConversionCharts"),
+    classTypeDecayCharts: document.getElementById("classTypeDecayCharts"),
     classFormatDonut: document.getElementById("classFormatDonut"),
     classFormatGroupChart: document.getElementById("classFormatGroupChart"),
     classFormatSmallGroupChart: document.getElementById("classFormatSmallGroupChart"),
@@ -168,6 +182,7 @@
     classFormatCompareTable: document.getElementById("classFormatCompareTable"),
     classFormatProcessCharts: document.getElementById("classFormatProcessCharts"),
     classFormatConversionCharts: document.getElementById("classFormatConversionCharts"),
+    classFormatDecayCharts: document.getElementById("classFormatDecayCharts"),
     classTable: document.getElementById("classTable"),
     classTableSearchInput: document.getElementById("classTableSearchInput"),
     chartModal: document.getElementById("chartModal"),
@@ -1096,6 +1111,7 @@
       focusByDaySwitch: dom.groupFocusByDaySwitch,
       processChartsHost: dom.groupFocusProcessCharts,
       conversionChartsHost: dom.groupFocusConversionCharts,
+      decayChartsHost: dom.groupFocusDecayCharts,
       focusChartIds: {
         day3Pending: "groupFocusTrendDay3Pending",
         day3ConvChase: "groupFocusTrendDay3ConvChase",
@@ -1116,6 +1132,7 @@
       focusByDaySwitch: dom.smallGroupFocusByDaySwitch,
       processChartsHost: dom.smallGroupFocusProcessCharts,
       conversionChartsHost: dom.smallGroupFocusConversionCharts,
+      decayChartsHost: dom.smallGroupFocusDecayCharts,
       focusChartIds: {
         day3Pending: "smallGroupFocusTrendDay3Pending",
         day3ConvChase: "smallGroupFocusTrendDay3ConvChase",
@@ -2487,6 +2504,7 @@
 
     renderByDayCharts(dom.campProcessCharts, dimensionItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.campConversionCharts, dimensionItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.campDecayCharts, dimensionItems, DECAY_SPECS, false)
   }
 
   function renderProjectCompareSection(camps, scopedRows) {
@@ -2507,6 +2525,7 @@
     renderDimensionRhythmCharts("projectCompare", dimensionItems)
     renderByDayCharts(dom.projectCompareProcessCharts, dimensionItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.projectCompareConversionCharts, dimensionItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.projectCompareDecayCharts, dimensionItems, DECAY_SPECS, false)
   }
 
   function renderDimensionRhythmCharts(prefix, dimensionItems) {
@@ -3340,6 +3359,7 @@
     const plotItems = [...tierSeries, benchmark].filter(Boolean)
     renderByDayCharts(dom.classTierProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classTierConversionCharts, plotItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.classTierDecayCharts, plotItems, DECAY_SPECS, false)
   }
 
   function buildClassTypeCompareRows(classes) {
@@ -3492,6 +3512,7 @@
     const plotItems = [...typeSeries, benchmark].filter(Boolean)
     renderByDayCharts(dom.classTypeProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classTypeConversionCharts, plotItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.classTypeDecayCharts, plotItems, DECAY_SPECS, false)
   }
 
   function buildClassFormatDistributionRows(classes, dimension) {
@@ -3648,6 +3669,7 @@
     const plotItems = [...formatSeries, benchmark].filter(Boolean)
     renderByDayCharts(dom.classFormatProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classFormatConversionCharts, plotItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.classFormatDecayCharts, plotItems, DECAY_SPECS, false)
   }
 
   function renderClassByDaySection(classes) {
@@ -3656,6 +3678,7 @@
       if (dom.classByDayHint) dom.classByDayHint.textContent = "当前筛选范围内暂无可用于 By-day 对比的班长数据。"
       renderTable(dom.classByDayProcessCharts, [], [])
       renderTable(dom.classByDayConversionCharts, [], [])
+      renderTable(dom.classByDayDecayCharts, [], [])
       if (dom.classByDayLeaderSelect) dom.classByDayLeaderSelect.innerHTML = ""
       if (dom.classByDayCampSelect) dom.classByDayCampSelect.innerHTML = ""
       return
@@ -3697,11 +3720,13 @@
     if (!plotItems.length || !leaderSnapshot) {
       renderTable(dom.classByDayProcessCharts, [], [])
       renderTable(dom.classByDayConversionCharts, [], [])
+      renderTable(dom.classByDayDecayCharts, [], [])
       return
     }
 
     renderByDayCharts(dom.classByDayProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classByDayConversionCharts, plotItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.classByDayDecayCharts, plotItems, DECAY_SPECS, false)
   }
 
   function renderClassCompareByDaySection(classes) {
@@ -3728,6 +3753,7 @@
       if (dom.classCompareByDayCampSelect) dom.classCompareByDayCampSelect.innerHTML = ""
       dom.classCompareByDayProcessCharts.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
       dom.classCompareByDayConversionCharts.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
+      dom.classCompareByDayDecayCharts.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
       return
     }
 
@@ -3760,11 +3786,13 @@
     if (!plotItems.length) {
       dom.classCompareByDayProcessCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
       dom.classCompareByDayConversionCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
+      dom.classCompareByDayDecayCharts.innerHTML = `<div class="stack-item">当前营期下暂无命中的班长数据。</div>`
       return
     }
 
     renderByDayCharts(dom.classCompareByDayProcessCharts, plotItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.classCompareByDayConversionCharts, plotItems, CONVERSION_SPECS, false)
+    renderDecayCharts(dom.classCompareByDayDecayCharts, plotItems, DECAY_SPECS, false)
   }
 
   function buildLeaderTierRows(classes, dimension = "project") {
@@ -4709,6 +4737,7 @@
       const byDayItems = buildEntityByDayCompareItems(items, compareRows, kind, activeByDayCamps)
       renderByDayCharts(config.processChartsHost, byDayItems, PROCESS_SPECS, false)
       renderByDayCharts(config.conversionChartsHost, byDayItems, CONVERSION_SPECS, false)
+      renderDecayCharts(config.decayChartsHost, byDayItems, DECAY_SPECS, false)
     } else {
       renderQuickSwitch(config.focusChaseSwitch, quickSwitchOptions, activeKey, { action: `${kind}-focus` })
       renderMultiQuickSwitch(config.focusByDaySwitch, byDayCampOptions, activeByDayCamps, { action: `${kind}-byday-camp-toggle` })
@@ -4788,6 +4817,7 @@
       const byDayItems = buildEntityByDayCompareItems(items, compareRows, kind, activeByDayCamps)
       renderByDayCharts(config.processChartsHost, byDayItems, PROCESS_SPECS, false)
       renderByDayCharts(config.conversionChartsHost, byDayItems, CONVERSION_SPECS, false)
+      renderDecayCharts(config.decayChartsHost, byDayItems, DECAY_SPECS, false)
     }
   }
 
@@ -5035,6 +5065,72 @@
       Plotly.newPlot(`${host.id}_${spec.key}`, withValueLabels(traces, spec.formatter || (spec.tickformat ? formatChartPercent : formatChartNumber)), baseLayout({
         xaxis: { categoryorder: "array", categoryarray: xCategories, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
         yaxis: { tickformat: spec.tickformat || undefined, color: PLOT_MUTED, gridcolor: PLOT_GRID }
+      }), plotConfig)
+    })
+  }
+
+  function decayRatio(previousValue, currentValue) {
+    if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return null
+    if (Math.abs(previousValue) < 1e-9) return null
+    return (currentValue - previousValue) / previousValue
+  }
+
+  function renderDecayCharts(host, items, specs, includeGroupName) {
+    if (!host) return
+    host.innerHTML = ""
+    specs.forEach((spec) => {
+      const card = document.createElement("div")
+      card.className = "chart-card"
+      card.innerHTML = `<button class="btn ghost chart-zoom-btn" type="button" data-action="open-chart-modal" data-chart="${host.id}_${spec.key}" data-title="${spec.title}">放大</button><div class="chart-card-title">${spec.title}</div><div id="${host.id}_${spec.key}" class="chart"></div>`
+      host.appendChild(card)
+      const xCategories = []
+      for (let day = spec.dayStart + 1; day <= spec.dayEnd; day += 1) xCategories.push(`D${day - 1}-${day}`)
+      xCategories.push(`D${spec.dayStart}-${spec.dayEnd}`)
+      const traces = items.map((item) => {
+        const y = []
+        for (let day = spec.dayStart + 1; day <= spec.dayEnd; day += 1) {
+          const previousValue = firstMetric(item.raw, item.supplement, [spec.field(day - 1)])
+          const currentValue = firstMetric(item.raw, item.supplement, [spec.field(day)])
+          y.push(decayRatio(previousValue, currentValue))
+        }
+        const firstValue = firstMetric(item.raw, item.supplement, [spec.field(spec.dayStart)])
+        const lastValue = firstMetric(item.raw, item.supplement, [spec.field(spec.dayEnd)])
+        y.push(decayRatio(firstValue, lastValue))
+        return {
+          type: "bar",
+          name: item.seriesName || (includeGroupName ? `${item.groupName}-${item.campId}` : item.campId),
+          x: xCategories.slice(),
+          y
+        }
+      }).filter((trace) => trace.y.some((value) => Number.isFinite(value)))
+      const normalTraceNames = traces
+        .map((trace) => trace.name)
+        .filter((name) => !["营期均值", "头部", "中部", "尾部", "新人", "老人"].includes(name))
+      const traceColorMap = new Map()
+      uniq(normalTraceNames).forEach((name, index) => {
+        traceColorMap.set(name, seriesColor(index))
+      })
+      traces.forEach((trace) => {
+        if (trace.name === "营期均值") {
+          trace.marker = { color: "#94a3b8" }
+        } else if (trace.name === "头部") {
+          trace.marker = { color: "#2563eb" }
+        } else if (trace.name === "中部") {
+          trace.marker = { color: "#f59e0b" }
+        } else if (trace.name === "尾部") {
+          trace.marker = { color: "#ef4444" }
+        } else if (trace.name === "新人") {
+          trace.marker = { color: "#22c55e" }
+        } else if (trace.name === "老人") {
+          trace.marker = { color: "#8b5cf6" }
+        } else {
+          trace.marker = { color: traceColorMap.get(trace.name) || "#2563eb" }
+        }
+      })
+      Plotly.newPlot(`${host.id}_${spec.key}`, withValueLabels(traces, formatChartPercent), baseLayout({
+        barmode: "group",
+        xaxis: { categoryorder: "array", categoryarray: xCategories, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        yaxis: { tickformat: spec.tickformat || ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
       }), plotConfig)
     })
   }
