@@ -21,10 +21,10 @@
   ]
 
   const CONVERSION_SPECS = [
-    { key: "convRate", title: "转率（day3转率-day7转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}转率`], tickformat: ".1%" },
-    { key: "individualConvRate", title: "个销转率（day3个销转率-day7个销转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}个销转率`], tickformat: ".1%" },
-    { key: "liveRoomConvRate", title: "直播间转率（day3直播间转率-day7直播间转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}直播间转率`, `day${d}直播转率`], tickformat: ".1%" },
-    { key: "attendConvRate", title: "到播转率（day3到播转率-day7到播转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}到播转率`], tickformat: ".1%" },
+    { key: "convRate", title: "转率（day3转率-day7转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}转率`], tickformat: ".2%", formatter: formatChartPercent2 },
+    { key: "individualConvRate", title: "个销转率（day3个销转率-day7个销转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}个销转率`], tickformat: ".2%", formatter: formatChartPercent2 },
+    { key: "liveRoomConvRate", title: "直播间转率（day3直播间转率-day7直播间转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}直播间转率`, `day${d}直播转率`], tickformat: ".2%", formatter: formatChartPercent2 },
+    { key: "attendConvRate", title: "到播转率（day3到播转率-day7到播转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}到播转率`], tickformat: ".2%", formatter: formatChartPercent2 },
     { key: "pendingRate", title: "待支付率（day3待支付率-day7待支付率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}待支付率`], tickformat: ".1%" },
     { key: "pendingConv", title: "待支付转率（day3待支付转率-day7待支付转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}待支付转率`], tickformat: ".1%" }
   ]
@@ -305,6 +305,11 @@
   function formatChartPercent(value) {
     if (!Number.isFinite(value)) return ""
     return trimTrailingZero(`${(value * 100).toFixed(1)}%`)
+  }
+
+  function formatChartPercent2(value) {
+    if (!Number.isFinite(value)) return ""
+    return trimTrailingZero(`${(value * 100).toFixed(2)}%`)
   }
 
   function withValueLabels(traces, formatter = formatChartNumber) {
@@ -5027,7 +5032,7 @@
           trace.marker = { size: 7 }
         }
       })
-      Plotly.newPlot(`${host.id}_${spec.key}`, withValueLabels(traces, spec.tickformat ? formatChartPercent : formatChartNumber), baseLayout({
+      Plotly.newPlot(`${host.id}_${spec.key}`, withValueLabels(traces, spec.formatter || (spec.tickformat ? formatChartPercent : formatChartNumber)), baseLayout({
         xaxis: { categoryorder: "array", categoryarray: xCategories, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
         yaxis: { tickformat: spec.tickformat || undefined, color: PLOT_MUTED, gridcolor: PLOT_GRID }
       }), plotConfig)
