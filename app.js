@@ -22,6 +22,9 @@
 
   const CONVERSION_SPECS = [
     { key: "convRate", title: "转率（day3转率-day7转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}转率`], tickformat: ".1%" },
+    { key: "individualConvRate", title: "个销转率（day3个销转率-day7个销转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}个销转率`], tickformat: ".1%" },
+    { key: "liveRoomConvRate", title: "直播间转率（day3直播间转率-day7直播间转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}直播间转率`, `day${d}直播转率`], tickformat: ".1%" },
+    { key: "attendConvRate", title: "到播转率（day3到播转率-day7到播转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}到播转率`], tickformat: ".1%" },
     { key: "pendingRate", title: "待支付率（day3待支付率-day7待支付率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}待支付率`], tickformat: ".1%" },
     { key: "pendingConv", title: "待支付转率（day3待支付转率-day7待支付转率）", dayStart: 3, dayEnd: 7, resolver: (d) => [`day${d}待支付转率`], tickformat: ".1%" }
   ]
@@ -747,6 +750,31 @@
     return firstMetric(row, null, [`day${day}出单占比`, `day${day}出单比例`, `day${day}出单占比%`])
   }
 
+  function rowAttendPeople(row, day) {
+    const addsValue = rowAdds(row)
+    const attendRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}到播`]))
+    return Number.isFinite(addsValue) && Number.isFinite(attendRate) ? addsValue * attendRate : null
+  }
+
+  function rowLiveOrderCount(row, day) {
+    const direct = firstMetric(row, null, [`day${day}直播单数`])
+    if (Number.isFinite(direct)) return direct
+    const attendPeople = rowAttendPeople(row, day)
+    const attendConvRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}到播转率`]))
+    if (Number.isFinite(attendPeople) && Number.isFinite(attendConvRate)) return attendPeople * attendConvRate
+    const addsValue = rowAdds(row)
+    const liveRoomConvRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}直播间转率`, `day${day}直播转率`]))
+    return Number.isFinite(addsValue) && Number.isFinite(liveRoomConvRate) ? addsValue * liveRoomConvRate : null
+  }
+
+  function rowIndividualOrderCount(row, day) {
+    const direct = firstMetric(row, null, [`day${day}个销单数`])
+    if (Number.isFinite(direct)) return direct
+    const addsValue = rowAdds(row)
+    const individualConvRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}个销转率`]))
+    return Number.isFinite(addsValue) && Number.isFinite(individualConvRate) ? addsValue * individualConvRate : null
+  }
+
   function rowClassName(row) {
     return cleanClassName(firstNonEmpty([row], ["班级", "班级名称", "班长"]) || "")
   }
@@ -872,6 +900,9 @@
         const rate = rowConvRate(row, day)
         return Number.isFinite(addsValue) && Number.isFinite(rate) ? addsValue * rate : null
       }))
+      const dayAttendPeople = sum(rows.map((row) => rowAttendPeople(row, day)))
+      const dayLiveOrders = sum(rows.map((row) => rowLiveOrderCount(row, day)))
+      const dayIndividualOrders = sum(rows.map((row) => rowIndividualOrderCount(row, day)))
       const dayPendingPeople = sum(rows.map((row) => {
         const addsValue = rowAdds(row)
         const rate = rowPendingRate(row, day)
@@ -893,6 +924,12 @@
       const dayOrders = sum(rows.map((row) => firstMetric(row, null, [`day${day}单数`])))
 
       if (Number.isFinite(ratio(dayConvPeople, adds))) out[`day${day}转率`] = ratio(dayConvPeople, adds)
+      if (Number.isFinite(ratio(dayLiveOrders, dayAttendPeople))) out[`day${day}到播转率`] = ratio(dayLiveOrders, dayAttendPeople)
+      if (Number.isFinite(ratio(dayLiveOrders, adds))) {
+        out[`day${day}直播间转率`] = ratio(dayLiveOrders, adds)
+        out[`day${day}直播转率`] = ratio(dayLiveOrders, adds)
+      }
+      if (Number.isFinite(ratio(dayIndividualOrders, adds))) out[`day${day}个销转率`] = ratio(dayIndividualOrders, adds)
       if (Number.isFinite(ratio(dayPendingPeople, adds))) out[`day${day}待支付率`] = ratio(dayPendingPeople, adds)
       if (Number.isFinite(ratio(dayPendingConvPeople, dayPendingPeople))) out[`day${day}待支付转率`] = ratio(dayPendingConvPeople, dayPendingPeople)
       if (Number.isFinite(dayOrders)) out[`day${day}单数`] = dayOrders
