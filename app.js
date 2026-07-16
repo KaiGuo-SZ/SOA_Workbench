@@ -771,13 +771,15 @@
   }
 
   function rowAttendPeople(row, day) {
+    const direct = firstMetric(row, null, [`_day${day}到播人数`, `day${day}到播人数`])
+    if (Number.isFinite(direct)) return direct
     const addsValue = rowAdds(row)
     const attendRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}到播`]))
     return Number.isFinite(addsValue) && Number.isFinite(attendRate) ? addsValue * attendRate : null
   }
 
   function rowLiveOrderCount(row, day) {
-    const direct = firstMetric(row, null, [`day${day}直播单数`])
+    const direct = firstMetric(row, null, [`_day${day}直播单数`, `day${day}直播单数`])
     if (Number.isFinite(direct)) return direct
     const attendPeople = rowAttendPeople(row, day)
     const attendConvRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}到播转率`]))
@@ -788,7 +790,7 @@
   }
 
   function rowIndividualOrderCount(row, day) {
-    const direct = firstMetric(row, null, [`day${day}个销单数`])
+    const direct = firstMetric(row, null, [`_day${day}个销单数`, `day${day}个销单数`])
     if (Number.isFinite(direct)) return direct
     const addsValue = rowAdds(row)
     const individualConvRate = normalizeRateLikeValue(firstMetric(row, null, [`day${day}个销转率`]))
@@ -939,6 +941,9 @@
       const dayOrders = sum(rows.map((row) => firstMetric(row, null, [`day${day}单数`])))
       const effectiveDayOrders = Number.isFinite(dayOrders) ? dayOrders : dayOrderContribution
 
+      if (Number.isFinite(dayAttendPeople)) out[`_day${day}到播人数`] = dayAttendPeople
+      if (Number.isFinite(dayLiveOrders)) out[`_day${day}直播单数`] = dayLiveOrders
+      if (Number.isFinite(dayIndividualOrders)) out[`_day${day}个销单数`] = dayIndividualOrders
       if (Number.isFinite(ratio(effectiveDayOrders, adds))) out[`day${day}转率`] = ratio(effectiveDayOrders, adds)
       if (Number.isFinite(ratio(dayLiveOrders, dayAttendPeople))) out[`day${day}到播转率`] = ratio(dayLiveOrders, dayAttendPeople)
       if (Number.isFinite(ratio(dayLiveOrders, adds))) {
