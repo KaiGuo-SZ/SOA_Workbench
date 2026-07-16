@@ -915,11 +915,6 @@
     }
 
     for (let day = 3; day <= 7; day += 1) {
-      const dayConvPeople = sum(rows.map((row) => {
-        const addsValue = rowAdds(row)
-        const rate = rowConvRate(row, day)
-        return Number.isFinite(addsValue) && Number.isFinite(rate) ? addsValue * rate : null
-      }))
       const dayAttendPeople = sum(rows.map((row) => rowAttendPeople(row, day)))
       const dayLiveOrders = sum(rows.map((row) => rowLiveOrderCount(row, day)))
       const dayIndividualOrders = sum(rows.map((row) => rowIndividualOrderCount(row, day)))
@@ -942,8 +937,9 @@
         return Number.isFinite(convValue) && Number.isFinite(share) ? convValue * share : null
       }))
       const dayOrders = sum(rows.map((row) => firstMetric(row, null, [`day${day}单数`])))
+      const effectiveDayOrders = Number.isFinite(dayOrders) ? dayOrders : dayOrderContribution
 
-      if (Number.isFinite(ratio(dayConvPeople, adds))) out[`day${day}转率`] = ratio(dayConvPeople, adds)
+      if (Number.isFinite(ratio(effectiveDayOrders, adds))) out[`day${day}转率`] = ratio(effectiveDayOrders, adds)
       if (Number.isFinite(ratio(dayLiveOrders, dayAttendPeople))) out[`day${day}到播转率`] = ratio(dayLiveOrders, dayAttendPeople)
       if (Number.isFinite(ratio(dayLiveOrders, adds))) {
         out[`day${day}直播间转率`] = ratio(dayLiveOrders, adds)
