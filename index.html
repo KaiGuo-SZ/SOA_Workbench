@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>策略运营分析工作台</title>
+    <title>策略运营分析工作台｜体验优化版</title>
     <link rel="stylesheet" href="./styles.css" />
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="./vendor/plotly-2.35.2.min.js"></script>
+    <script src="./vendor/papaparse-5.4.1.min.js"></script>
     <script>
       var _hmt = _hmt || [];
       (function() {
         var hm = document.createElement("script");
         hm.src = "https://hm.baidu.com/hm.js?b70eec459bc178bf348a3a6c8bfb6234";
+        hm.async = true;
         var s = document.getElementsByTagName("script")[0];
         s.parentNode.insertBefore(hm, s);
       })();
@@ -89,7 +90,10 @@
         <section id="dashboardView" class="screen">
           <div class="topbar">
             <div>
-              <div class="section-kicker">分析结果</div>
+              <div class="topbar-context">
+                <span class="section-kicker">分析结果</span>
+                <span class="role-chip">策略运营 · 全链路视角</span>
+              </div>
               <h2>策略运营分析工作台</h2>
               <p id="summaryText" class="topbar-copy"></p>
             </div>
@@ -112,84 +116,94 @@
               </div>
             </div>
             <div class="filters-grid">
-              <div>
+              <div class="filter-field filter-basic">
                 <label>项目</label>
                 <div id="projectSelect" class="ms"></div>
               </div>
-              <div>
+              <div class="filter-field filter-basic">
                 <label>月份</label>
                 <div id="monthSelect" class="ms"></div>
               </div>
-              <div>
+              <div class="filter-field filter-basic">
                 <label>周</label>
                 <div id="weekSelect" class="ms"></div>
               </div>
-              <div>
+              <div class="filter-field filter-org">
                 <label>营期</label>
                 <div id="campSelect" class="ms"></div>
               </div>
-              <div>
+              <div class="filter-field filter-org">
                 <label>大组</label>
                 <div id="groupSelect" class="ms"></div>
               </div>
-              <div>
+              <div class="filter-field filter-org">
                 <label>小组</label>
                 <div id="smallGroupSelect" class="ms"></div>
               </div>
             </div>
+            <div id="activeScopeSummary" class="active-scope-summary">当前范围：全部数据</div>
           </div>
 
-          <nav class="tabs">
-            <button class="tab active" data-tab="overview" type="button">总览</button>
-            <button class="tab" data-tab="project-compare" type="button">项目对比</button>
-            <button class="tab" data-tab="camp" type="button">营期分析</button>
-            <button class="tab" data-tab="group" type="button">大组分析</button>
-            <button class="tab" data-tab="small-group" type="button">小组分析</button>
-            <button class="tab" data-tab="class" type="button">班长分析</button>
-            <button class="tab" data-tab="quality" type="button">数据健康</button>
+          <nav class="tabs" aria-label="工作台主导航">
+            <div class="nav-brand">
+              <span class="nav-brand-mark">策</span>
+              <span class="nav-brand-copy"><strong>运营分析</strong><small>OPERATION DESK</small></span>
+              <button id="toggleSidebarBtn" class="nav-pin-btn" type="button" aria-label="固定导航" title="固定导航">📌</button>
+            </div>
+            <div class="nav-group-label">经营驾驶舱</div>
+            <button class="tab active" data-tab="overview" type="button"><span class="tab-index">01</span><span>经营总览</span></button>
+            <button class="tab" data-tab="project-compare" type="button"><span class="tab-index">02</span><span>项目对比</span></button>
+            <button class="tab" data-tab="camp" type="button"><span class="tab-index">03</span><span>营期分析</span></button>
+            <div class="nav-group-label">组织分析</div>
+            <button class="tab" data-tab="group" type="button"><span class="tab-index">04</span><span>大组分析</span></button>
+            <button class="tab" data-tab="small-group" type="button"><span class="tab-index">05</span><span>小组分析</span></button>
+            <button class="tab" data-tab="class" type="button"><span class="tab-index">06</span><span>班长分析</span></button>
+            <div class="nav-group-label">数据管理</div>
+            <button class="tab" data-tab="quality" type="button"><span class="tab-index">07</span><span>数据健康</span></button>
+            <div class="nav-footnote">保留全层级指标<br />支持从经营结果逐层穿透</div>
           </nav>
 
-          <section class="tab-panel active" data-panel="overview">
-            <div class="metrics-grid" id="overviewMetrics"></div>
-            <div class="two-col">
-              <div class="panel">
-                <div class="card-head">
-                  <div>
-                    <div class="section-kicker">经营节奏</div>
-                    <h3>月度经营总览</h3>
-                  </div>
-                </div>
-                <div id="overviewTrend" class="chart tall"></div>
-              </div>
-              <div class="panel">
-                <div class="card-head">
-                  <div>
-                    <div class="section-kicker">风险诊断</div>
-                    <h3>异常清单</h3>
-                  </div>
-                </div>
-                <div id="anomalyList" class="stack-list"></div>
-              </div>
+          <div class="analysis-context-bar">
+            <div>
+              <div id="analysisBreadcrumb" class="analysis-breadcrumb">经营驾驶舱 / 经营总览</div>
+              <div id="analysisPageHint" class="analysis-page-hint">先检查进行中营期的昨日小组异常，再复盘最近结营3期。</div>
             </div>
-            <div class="two-col">
-              <div class="panel">
-                <div class="card-head">
-                  <div>
-                    <div class="section-kicker">策略动作</div>
-                    <h3>建议优先事项</h3>
-                  </div>
+            <div class="analysis-guide">分析路径：结果 → 对比 → 过程 → 明细</div>
+          </div>
+
+          <section class="tab-panel active" data-panel="overview">
+            <div id="overviewPulse" class="overview-pulse"></div>
+            <div class="panel overview-section-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">运营干预</div>
+                  <h3>当前运营营期</h3>
+                  <div class="panel-subtitle">只检查前一天已经完成的数据；当日数据不参与异常判断。</div>
                 </div>
-                <div id="actionList" class="stack-list"></div>
               </div>
-              <div class="panel">
-                <div class="card-head">
-                  <div>
-                    <div class="section-kicker">风险排名</div>
-                    <h3>重点关注对象</h3>
-                  </div>
+              <div id="activeCampCards" class="active-camp-grid"></div>
+            </div>
+            <div class="panel overview-section-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">昨日过程异常</div>
+                  <h3>进行中营期 · 分层异常</h3>
+                  <div class="panel-subtitle">项目、大组、小组对比历史5期同Day基准；班长对比同营期大盘，并优先执行回复率和回复时长固定预警线。</div>
                 </div>
-                <div id="riskRanking" class="table-wrap"></div>
               </div>
+              <div id="yesterdayAnomalyFocus" class="overview-focus-bar hidden"></div>
+              <div id="yesterdayAnomalyTable" class="table-wrap"></div>
+            </div>
+            <div class="panel overview-section-panel">
+              <div class="card-head">
+                <div>
+                  <div class="section-kicker">结营复盘</div>
+                  <h3>最近结营3期</h3>
+                  <div class="panel-subtitle">ROI目标0.8，人均产能目标1.5万元；其余关注指标只比较三期变化，不设置目标值。</div>
+                </div>
+              </div>
+              <div id="recentClosedSummary" class="recent-closed-summary"></div>
+              <div id="recentClosedTable" class="table-wrap"></div>
             </div>
           </section>
 
@@ -294,11 +308,7 @@
                 </div>
               </div>
               <div id="campCumConv" class="chart tall"></div>
-              <div class="chart-grid four-col chart-grid-gap-lg">
-                <div class="chart-card">
-                  <div class="chart-card-title">D3-D7 出单占比</div>
-                  <div id="campHmOrder" class="chart"></div>
-                </div>
+              <div class="chart-grid three-col chart-grid-gap-lg camp-heatmap-grid">
                 <div class="chart-card">
                   <div class="chart-card-title">D3-D7 转率</div>
                   <div id="campHmConv" class="chart"></div>
@@ -310,6 +320,18 @@
                 <div class="chart-card">
                   <div class="chart-card-title">D3-D7 待支付转率</div>
                   <div id="campHmPendingConv" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 出单占比</div>
+                  <div id="campHmOrder" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 到播转率</div>
+                  <div id="campHmAttendConv" class="chart"></div>
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card-title">D3-D7 个销转率</div>
+                  <div id="campHmIndividualConv" class="chart"></div>
                 </div>
               </div>
             </div>
@@ -399,8 +421,9 @@
                   <div class="section-kicker">分析 2</div>
                   <h3>组内趋势</h3>
                 </div>
+                <div id="groupTrendDimensionSwitch" class="quick-switch compact"></div>
               </div>
-              <div class="panel-subtitle">按周观察各大组关键指标变化趋势，聚焦关键经营效率与转化质量。</div>
+              <div class="panel-subtitle">支持按营期查看细节，或切换为周维度观察经营走势。</div>
               <div class="chart-grid three-col group-trend-grid">
                 <div class="chart-card">
                   <div class="chart-card-title">ROI 趋势</div>
@@ -489,7 +512,7 @@
               <div class="card-head">
                 <div>
                   <div class="section-kicker">趋势明细</div>
-                  <h3>大组周度趋势表</h3>
+                  <h3>大组趋势明细</h3>
                 </div>
               </div>
               <div id="groupTrendTable" class="table-wrap"></div>
@@ -550,8 +573,9 @@
                   <div class="section-kicker">分析 2</div>
                   <h3>组内趋势</h3>
                 </div>
+                <div id="smallGroupTrendDimensionSwitch" class="quick-switch compact"></div>
               </div>
-              <div class="panel-subtitle">按周观察各小组关键指标变化趋势，聚焦关键经营效率与转化质量。</div>
+              <div class="panel-subtitle">支持按营期查看细节，或切换为周维度观察经营走势。</div>
               <div class="chart-grid three-col group-trend-grid">
                 <div class="chart-card">
                   <div class="chart-card-title">ROI 趋势</div>
@@ -636,7 +660,7 @@
               <div class="card-head">
                 <div>
                   <div class="section-kicker">趋势明细</div>
-                  <h3>小组周度趋势表</h3>
+                  <h3>小组趋势明细</h3>
                 </div>
               </div>
               <div id="smallGroupTrendTable" class="table-wrap"></div>
@@ -806,7 +830,7 @@
               <div id="classAddRevenueSmallGroupSwitch" class="quick-switch"></div>
               <div id="classWeeklyAddRevenueTable" class="table-wrap"></div>
             </div>
-            <div class="panel class-byday-panel">
+            <div id="classByDaySection" class="panel class-byday-panel">
               <div class="card-head">
                 <div>
                   <div class="section-kicker">By-day 数据</div>

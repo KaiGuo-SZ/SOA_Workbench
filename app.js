@@ -47,8 +47,12 @@
     startAnalysisBtn: document.getElementById("startAnalysisBtn"),
     exportCsvBtn: document.getElementById("exportCsvBtn"),
     backToImportBtn: document.getElementById("backToImportBtn"),
+    toggleSidebarBtn: document.getElementById("toggleSidebarBtn"),
     applyFiltersBtn: document.getElementById("applyFiltersBtn"),
     toggleFiltersBtn: document.getElementById("toggleFiltersBtn"),
+    activeScopeSummary: document.getElementById("activeScopeSummary"),
+    analysisBreadcrumb: document.getElementById("analysisBreadcrumb"),
+    analysisPageHint: document.getElementById("analysisPageHint"),
     summaryText: document.getElementById("summaryText"),
     asOfText: document.getElementById("asOfText"),
     projectSelect: document.getElementById("projectSelect"),
@@ -58,6 +62,12 @@
     groupSelect: document.getElementById("groupSelect"),
     smallGroupSelect: document.getElementById("smallGroupSelect"),
     overviewMetrics: document.getElementById("overviewMetrics"),
+    overviewPulse: document.getElementById("overviewPulse"),
+    activeCampCards: document.getElementById("activeCampCards"),
+    yesterdayAnomalyFocus: document.getElementById("yesterdayAnomalyFocus"),
+    yesterdayAnomalyTable: document.getElementById("yesterdayAnomalyTable"),
+    recentClosedSummary: document.getElementById("recentClosedSummary"),
+    recentClosedTable: document.getElementById("recentClosedTable"),
     projectCompareOverviewTable: document.getElementById("projectCompareOverviewTable"),
     projectCompareCumConv: document.getElementById("projectCompareCumConv"),
     projectCompareHmOrder: document.getElementById("projectCompareHmOrder"),
@@ -123,6 +133,7 @@
     groupFocusConversionCharts: document.getElementById("groupFocusConversionCharts"),
     groupFocusDecayCharts: document.getElementById("groupFocusDecayCharts"),
     groupOrderRhythmSwitch: document.getElementById("groupOrderRhythmSwitch"),
+    groupTrendDimensionSwitch: document.getElementById("groupTrendDimensionSwitch"),
     campWarmTimeDimensionSwitch: document.getElementById("campWarmTimeDimensionSwitch"),
     campWarmDimensionSwitch: document.getElementById("campWarmDimensionSwitch"),
     campWarmHeatmap: document.getElementById("campWarmHeatmap"),
@@ -135,6 +146,7 @@
     smallGroupFocusConversionCharts: document.getElementById("smallGroupFocusConversionCharts"),
     smallGroupFocusDecayCharts: document.getElementById("smallGroupFocusDecayCharts"),
     smallGroupOrderRhythmSwitch: document.getElementById("smallGroupOrderRhythmSwitch"),
+    smallGroupTrendDimensionSwitch: document.getElementById("smallGroupTrendDimensionSwitch"),
     smallGroupRadarChart: document.getElementById("smallGroupRadarChart"),
     smallGroupRadarTable: document.getElementById("smallGroupRadarTable"),
     classMetrics: document.getElementById("classMetrics"),
@@ -225,6 +237,8 @@
       monthDrillMode: "path",
       campEntityDrillMode: "path",
       filterCollapsed: false,
+      sidebarCollapsed: false,
+      overviewFocusedCampId: null,
       campWarmDimension: "group",
       campWarmTimeDimension: "camp",
       campRhythmDimension: "camp",
@@ -243,6 +257,8 @@
       smallGroupByDayCampsManuallyCleared: false,
       groupRhythmMetric: "orderShare",
       smallGroupRhythmMetric: "orderShare",
+      groupTrendDimension: "camp",
+      smallGroupTrendDimension: "camp",
       classHeatmapSmallGroup: "",
       classHeatmapSearch: "",
       classByDayLeader: "",
@@ -255,7 +271,8 @@
       classTypeCompareExpanded: [],
       classTableSearch: "",
       classTableSort: "roiDesc",
-      classTierDimension: "project"
+      classTierDimension: "project",
+      campBroadcasts: {}
     }
   }
 
@@ -967,7 +984,7 @@
     const ta = a.startDate ? a.startDate.getTime() : 0
     const tb = b.startDate ? b.startDate.getTime() : 0
     if (ta !== tb) return ta - tb
-    if (a.campId !== b.campId) return Number(a.campId) - Number(b.campId)
+    if (a.campId !== b.campId) return String(a.campId || "").localeCompare(String(b.campId || ""), "zh-CN", { numeric: true })
     return String(a.groupName || "").localeCompare(String(b.groupName || ""), "zh-CN")
   }
 
@@ -1107,6 +1124,8 @@
       orderRhythmStateKey: "groupRhythmMetric",
       trendTableId: "groupTrendTable",
       trendSpecs: GROUP_TREND_SPECS,
+      trendDimensionSwitch: dom.groupTrendDimensionSwitch,
+      trendDimensionStateKey: "groupTrendDimension",
       focusStateKey: "groupFocus",
       focusChaseSwitch: dom.groupFocusChaseSwitch,
       focusByDaySwitch: dom.groupFocusByDaySwitch,
@@ -1128,6 +1147,8 @@
       orderRhythmStateKey: "smallGroupRhythmMetric",
       trendTableId: "smallGroupTrendTable",
       trendSpecs: SMALL_GROUP_TREND_SPECS,
+      trendDimensionSwitch: dom.smallGroupTrendDimensionSwitch,
+      trendDimensionStateKey: "smallGroupTrendDimension",
       focusStateKey: "smallGroupFocus",
       focusChaseSwitch: dom.smallGroupFocusChaseSwitch,
       focusByDaySwitch: dom.smallGroupFocusByDaySwitch,
@@ -1244,6 +1265,15 @@
       rows = rows.filter((row) => (String(row[meta.smallGroupField] || "未知小组").trim() || "未知小组") === drill.smallGroupName)
     }
     return rows
+  }
+
+  function getOverviewScopedRows() {
+    const meta = currentMeta()
+    const projectSet = new Set(state.filters.projects)
+    return state.model.unifiedRows.filter((row) => {
+      const projectName = normalizeProjectName(row[meta.projectField])
+      return !projectSet.size || projectSet.has(projectName)
+    })
   }
 
   function buildCampDrillRowsByLevel(scope, targetLevel) {
@@ -1837,6 +1867,7 @@
   function switchScreen(mode) {
     dom.importView.classList.toggle("active", mode === "import")
     dom.dashboardView.classList.toggle("active", mode === "dashboard")
+    if (mode === "dashboard") renderSidebarState()
   }
 
   function resetAnalysisSession({ clearUpload = false } = {}) {
@@ -1851,6 +1882,9 @@
       monthDrillMode: "path",
       campEntityDrillMode: "path",
       filterCollapsed: false,
+      sidebarCollapsed: false,
+      overviewFocusedCampId: null,
+      campWarmDimension: "group",
       campWarmDimension: "group",
       campWarmTimeDimension: "camp",
       campRhythmDimension: "camp",
@@ -1869,6 +1903,8 @@
       smallGroupByDayCampsManuallyCleared: false,
       groupRhythmMetric: "orderShare",
       smallGroupRhythmMetric: "orderShare",
+      groupTrendDimension: "camp",
+      smallGroupTrendDimension: "camp",
       classHeatmapSmallGroup: "",
       classHeatmapSearch: "",
       classByDayLeader: "",
@@ -1881,7 +1917,8 @@
       classTypeCompareExpanded: [],
       classTableSearch: "",
       classTableSort: "roiDesc",
-      classTierDimension: "project"
+      classTierDimension: "project",
+      campBroadcasts: {}
     })
     if (dom.fileClass) dom.fileClass.value = ""
     if (dom.summaryText) dom.summaryText.textContent = ""
@@ -1902,25 +1939,31 @@
     state.ui.projectMS.setOnChange((values) => {
       state.draftFilters.projects = values
       syncMonthOptions(state.draftFilters, { useDefault: true, forceAll: true })
+      updateFilterApplyState()
     })
     state.ui.monthMS.setOnChange((values) => {
       state.draftFilters.months = values.map(Number)
       syncWeekOptions(state.draftFilters, { useDefault: true, forceAll: true })
+      updateFilterApplyState()
     })
     state.ui.weekMS.setOnChange((values) => {
       state.draftFilters.weeks = values
       syncCampOptions(state.draftFilters, { useDefault: true, forceAll: true })
+      updateFilterApplyState()
     })
     state.ui.campMS.setOnChange((values) => {
       state.draftFilters.camps = values
       syncGroupOptions(state.draftFilters, { forceAll: true })
+      updateFilterApplyState()
     })
     state.ui.groupMS.setOnChange((values) => {
       state.draftFilters.groups = values
       syncSmallGroupOptions(state.draftFilters, { forceAll: true })
+      updateFilterApplyState()
     })
     state.ui.smallGroupMS.setOnChange((values) => {
       state.draftFilters.smallGroups = values
+      updateFilterApplyState()
     })
 
     state.draftFilters = cloneFilters(state.filters)
@@ -1941,6 +1984,25 @@
     state.ui.monthMS.setOptions(monthOptions, defaultMonths.map((item) => String(item)))
     syncWeekOptions(state.draftFilters, { useDefault: true, forceAll: true })
     state.filters = cloneFilters(state.draftFilters)
+    updateFilterApplyState()
+  }
+
+  function normalizedFilterValues(values) {
+    return (values || []).map(String).sort((a, b) => a.localeCompare(b, "zh-CN", { numeric: true }))
+  }
+
+  function filtersHaveChanges() {
+    return ["projects", "months", "weeks", "camps", "groups", "smallGroups"].some((key) => {
+      return JSON.stringify(normalizedFilterValues(state.filters[key])) !== JSON.stringify(normalizedFilterValues(state.draftFilters[key]))
+    })
+  }
+
+  function updateFilterApplyState() {
+    if (!dom.applyFiltersBtn) return
+    const dirty = filtersHaveChanges()
+    dom.applyFiltersBtn.disabled = !dirty
+    dom.applyFiltersBtn.textContent = dirty ? "应用筛选" : "筛选已生效"
+    dom.filterPanel?.classList.toggle("has-draft-changes", dirty)
   }
 
   function filteredRowsForOptions(targetFilters, { ignoreMonths = false, ignoreWeeks = false, ignoreCamps = false, ignoreGroups = false, ignoreSmallGroups = false } = {}) {
@@ -2052,6 +2114,7 @@
   function applyFilters() {
     if (!state.model) return
     state.filters = cloneFilters({ ...state.draftFilters, asOfDate: state.filters.asOfDate })
+    updateFilterApplyState()
     renderAll()
   }
 
@@ -2153,20 +2216,74 @@
     renderFilterPanelState()
     const projectCount = uniq(scopedRows.map((row) => normalizeProjectName(row?.[state.model.meta.projectField]))).filter(Boolean).length
     dom.summaryText.textContent = `当前筛选范围内共有 ${projectCount} 个项目、${camps.length} 个营期、${groups.length} 个大组分析对象、${smallGroups.length} 个小组分析对象、${classes.length} 个班级分析对象，建议先看总览识别风险，再下钻到项目对比、营期页、大组页和班级页。`
-    renderOverview(camps, groups)
-    renderProjectCompareSection(camps, scopedRows)
-    renderCampSection(camps, scopedRows)
-    renderGroupSection(groups, classes)
-    renderSmallGroupSection(smallGroups, classes)
-    renderClassSection(classes)
-    renderQuality(scopedRows, camps, groups, smallGroups, classes)
+    renderActiveScopeSummary()
+    renderActiveTab({ scopedRows, ...scoped })
     resizeVisiblePlots()
+  }
+
+  function renderActiveTab(prebuilt = null) {
+    if (!state.model) return
+    const useOverviewScope = state.ui.activeTab === "overview"
+    const scopedRows = useOverviewScope
+      ? getOverviewScopedRows()
+      : (prebuilt?.scopedRows || getScopedUnifiedRows(null))
+    const scoped = useOverviewScope
+      ? buildSnapshotsFromRows(scopedRows, state.model.meta)
+      : (prebuilt || buildSnapshotsFromRows(scopedRows, state.model.meta))
+    const camps = scoped.campSnapshots
+    const groups = scoped.groupSnapshots
+    const smallGroups = scoped.smallGroupSnapshots
+    const classes = scoped.classSnapshots
+    if (dom.asOfText) dom.asOfText.textContent = `分析日期：${formatDate(state.filters.asOfDate)}`
+    if (dom.summaryText) {
+      const projectCount = uniq(scopedRows.map((row) => normalizeProjectName(row?.[state.model.meta.projectField]))).filter(Boolean).length
+      dom.summaryText.textContent = `当前筛选范围内共有 ${projectCount} 个项目、${camps.length} 个营期、${groups.length} 个大组分析对象、${smallGroups.length} 个小组分析对象、${classes.length} 个班级分析对象，建议先看总览识别风险，再下钻到项目对比、营期页、大组页和班级页。`
+    }
+    if (state.ui.activeTab === "overview") renderOverview(camps, groups, smallGroups, classes)
+    else if (state.ui.activeTab === "project-compare") renderProjectCompareSection(camps, scopedRows)
+    else if (state.ui.activeTab === "camp") renderCampSection(camps, scopedRows)
+    else if (state.ui.activeTab === "group") renderGroupSection(groups, classes)
+    else if (state.ui.activeTab === "small-group") renderSmallGroupSection(smallGroups, classes)
+    else if (state.ui.activeTab === "class") renderClassSection(classes)
+    else if (state.ui.activeTab === "quality") renderQuality(scopedRows, camps, groups, smallGroups, classes)
   }
 
   function renderFilterPanelState() {
     if (!dom.filterPanel || !dom.toggleFiltersBtn) return
     dom.filterPanel.classList.toggle("collapsed", !!state.ui.filterCollapsed)
     dom.toggleFiltersBtn.textContent = state.ui.filterCollapsed ? "展开筛选" : "收起筛选"
+  }
+
+  function renderSidebarState() {
+    if (!dom.dashboardView) return
+    dom.dashboardView.classList.toggle("sidebar-collapsed", !!state.ui.sidebarCollapsed)
+    if (dom.toggleSidebarBtn) {
+      dom.toggleSidebarBtn.textContent = "📌"
+      dom.toggleSidebarBtn.classList.toggle("is-pinned", !state.ui.sidebarCollapsed)
+      dom.toggleSidebarBtn.setAttribute("title", state.ui.sidebarCollapsed ? "固定导航" : "取消固定")
+      dom.toggleSidebarBtn.setAttribute("aria-label", state.ui.sidebarCollapsed ? "固定导航" : "取消固定")
+      dom.toggleSidebarBtn.setAttribute("aria-pressed", String(!state.ui.sidebarCollapsed))
+    }
+    resizeVisiblePlots()
+  }
+
+  function filterScopeText(values, emptyLabel, suffix = "") {
+    if (!Array.isArray(values) || !values.length) return emptyLabel
+    const shown = values.slice(0, 2).map((value) => `${value}${suffix}`)
+    return values.length > 2 ? `${shown.join("、")}等${values.length}项` : shown.join("、")
+  }
+
+  function renderActiveScopeSummary() {
+    if (!dom.activeScopeSummary) return
+    const parts = [
+      filterScopeText(state.filters.projects, "全部项目"),
+      filterScopeText(state.filters.months, "全部月份", "月"),
+      filterScopeText(state.filters.weeks, "全部周"),
+      filterScopeText(state.filters.camps, "全部营期"),
+      filterScopeText(state.filters.groups, "全部大组"),
+      filterScopeText(state.filters.smallGroups, "全部小组")
+    ]
+    dom.activeScopeSummary.textContent = `当前范围：${parts.join("  /  ")}`
   }
 
   function resizeVisiblePlots() {
@@ -2251,59 +2368,524 @@
     return better ? "good" : "bad"
   }
 
-  function renderOverview(camps, groups) {
-    const monthly = monthlyStats(camps)
-    const latest = monthly.at(-1)
-    const prev = monthly.length >= 2 ? monthly.at(-2) : null
-    const campSet = new Set(camps.map((item) => item.campId))
-    const groupSet = new Set(groups.map((item) => `${item.campId}__${item.groupName}`))
-    const scopedAnomalies = state.model.anomalies.filter((item) => item.type === "camp"
-      ? campSet.has(item.campId)
-      : groupSet.has(`${item.campId}__${item.groupName}`))
-    const scopedRecommendations = buildRecommendations(scopedAnomalies)
-    dom.overviewMetrics.innerHTML = [
-      metricCard("营期数", camps.length, `${groups.length} 个大组对象`, camps.filter((item) => item.status === "进行中").length ? "有进行中营期" : "全部已结营", camps.filter((item) => item.status === "进行中").length ? "good" : "warn"),
-      metricCard("总流水", formatMoney(sum(camps.map((item) => item.metrics.revenue))), latest ? `${latest.month}月` : "无月份", compareText(latest?.revenue, prev?.revenue), compareClass(latest?.revenue, prev?.revenue)),
-      metricCard("总成本", formatMoney(sum(camps.map((item) => item.metrics.cost))), latest ? `${latest.month}月` : "无月份", compareText(latest?.cost, prev?.cost, true), compareClass(latest?.cost, prev?.cost, true)),
-      metricCard("ROI", formatNum(ratio(sum(camps.map((item) => item.metrics.revenue)), sum(camps.map((item) => item.metrics.cost))), 2), `目标 ${ROI_TARGET}`, compareText(latest?.roi, prev?.roi, false, false), compareClass(latest?.roi, prev?.roi)),
-      metricCard("添加转率", formatPct(ratio(sum(camps.map((item) => item.metrics.conv)), sum(camps.map((item) => item.metrics.adds)))), latest ? `${latest.month}月` : "无月份", compareText(latest?.convRate, prev?.convRate, false, true), compareClass(latest?.convRate, prev?.convRate))
-    ].join("")
+  const OUTPUT_PER_LEADER_TARGET = 15000
 
-    Plotly.newPlot("overviewTrend", withValueLabels([
-      { type: "bar", name: "总成本", x: monthly.map((item) => `${item.month}月`), y: monthly.map((item) => item.cost), marker: { color: PLOT_COST } },
-      { type: "bar", name: "总流水", x: monthly.map((item) => `${item.month}月`), y: monthly.map((item) => item.revenue), marker: { color: PLOT_REVENUE } },
-      { type: "scatter", mode: "lines+markers", name: "ROI", x: monthly.map((item) => `${item.month}月`), y: monthly.map((item) => item.roi), yaxis: "y2", line: { color: PLOT_ROI, width: 2 } }
-    ]), baseLayout({
-      barmode: "group",
-      yaxis: { title: "流水 / 成本", color: PLOT_MUTED, gridcolor: PLOT_GRID },
-      yaxis2: { title: "ROI", overlaying: "y", side: "right", color: PLOT_MUTED },
-      shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y2", y0: ROI_TARGET, y1: ROI_TARGET, line: { color: "rgba(15,23,42,0.25)", dash: "dot" } }]
-    }), plotConfig)
+  function focusOverviewCampAnomalies(campId) {
+    if (!campId) return
+    state.ui.overviewFocusedCampId = campId
+    renderActiveTab()
+    dom.yesterdayAnomalyFocus?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
-    const topAnomalies = scopedAnomalies.slice(0, 8)
-    dom.anomalyList.innerHTML = topAnomalies.length ? topAnomalies.map(anomalyCard).join("") : `<div class="stack-item">当前筛选范围内未识别到明显异常。</div>`
-    if (dom.groupAnomalyList) {
-      dom.groupAnomalyList.innerHTML = scopedAnomalies.filter((item) => item.type === "group").slice(0, 6).map(anomalyCard).join("") || `<div class="stack-item">当前没有大组级明显异常。</div>`
+  function clearOverviewCampAnomalyFocus() {
+    if (!state.ui.overviewFocusedCampId) return
+    state.ui.overviewFocusedCampId = null
+    renderActiveTab()
+    dom.yesterdayAnomalyTable?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  function applyScopedCampFilters(campId) {
+    if (!state.model || !campId) return
+    const nextFilters = cloneFilters(state.filters)
+    nextFilters.months = []
+    nextFilters.weeks = []
+    nextFilters.camps = [campId]
+    nextFilters.groups = []
+    nextFilters.smallGroups = []
+    syncMonthOptions(nextFilters, { useDefault: false, forceAll: false })
+    state.draftFilters = cloneFilters(nextFilters)
+    state.filters = cloneFilters(nextFilters)
+    updateFilterApplyState()
+  }
+
+  function openCampAnalysisWithCamp(campId) {
+    if (!campId) return
+    state.ui.overviewFocusedCampId = null
+    applyScopedCampFilters(campId)
+    renderAll()
+    switchAnalysisTab("camp", { scroll: false })
+  }
+
+  function openClassByDayWithContext(className, campId) {
+    if (!className || !campId) return
+    state.ui.overviewFocusedCampId = null
+    applyScopedCampFilters(campId)
+    state.ui.classByDayLeader = className
+    state.ui.classByDayCamp = campId
+    state.ui.classCompareByDayCamp = campId
+    renderAll()
+    switchAnalysisTab("class", { scroll: false })
+    document.getElementById("classByDaySection")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  function overviewFocusMetric(item, key) {
+    if (key === "pendingRate") return item.metrics.pendingRate
+    if (key === "pendingConv") return item.metrics.pendingConv
+    if (key === "highImmerseRate") return normalizeRateLikeValue(firstMetric(item.raw, item.supplement, ["高沉浸率"]))
+    if (key === "highImmerseConvRate") return normalizeRateLikeValue(firstMetric(item.raw, item.supplement, ["高沉浸转率"]))
+    return null
+  }
+
+  function previousDayProcessAnomalies(activeCamps, smallGroups) {
+    const metricSpecs = [
+      { key: "到播", label: "到播率", lowerIsBetter: false, formatter: formatPct },
+      { key: "留存", label: "留存率", lowerIsBetter: false, formatter: formatPct },
+      { key: "回复", label: "班长回复率", lowerIsBetter: false, formatter: formatPct },
+      { key: "回复时长", label: "班长回复时长", lowerIsBetter: true, formatter: (value) => `${formatNum(value, 0)}秒` }
+    ]
+    const anomalies = []
+    const campStatus = []
+    activeCamps.forEach((camp) => {
+      const checkDay = camp.status === "已结营" ? 7 : Math.max(0, (camp.day || 0) - 1)
+      const currentStage = camp.status === "已结营" ? "结营次日" : `Day${camp.day || "-"}`
+      const peers = smallGroups.filter((item) => item.campId === camp.campId)
+      if (checkDay < 1) {
+        campStatus.push({ campId: camp.campId, checkDay, status: "waiting", available: 0 })
+        return
+      }
+      let available = 0
+      metricSpecs.forEach((spec) => {
+        const field = `day${checkDay}${spec.key}`
+        const values = peers.map((item) => firstMetric(item.raw, item.supplement, [field])).filter(Number.isFinite)
+        if (!values.length) return
+        available += 1
+        const peerMedian = median(values)
+        peers.forEach((item) => {
+          const value = firstMetric(item.raw, item.supplement, [field])
+          if (!Number.isFinite(value) || !Number.isFinite(peerMedian)) return
+          const absoluteGap = spec.lowerIsBetter ? value - peerMedian : peerMedian - value
+          const relativeGap = absoluteGap / Math.max(Math.abs(peerMedian), 0.01)
+          const abnormal = spec.lowerIsBetter
+            ? absoluteGap >= 120 && relativeGap >= 0.5
+            : absoluteGap >= 0.08 && relativeGap >= 0.2
+          if (!abnormal) return
+          anomalies.push({
+            campId: camp.campId,
+            currentDay: camp.day,
+            checkDay,
+            groupName: item.groupName,
+            smallGroupName: item.smallGroupName,
+            metric: spec.label,
+            value,
+            benchmark: peerMedian,
+            gap: absoluteGap,
+            formatter: spec.formatter,
+            severity: relativeGap >= 0.35 ? "high" : "medium"
+          })
+        })
+      })
+      campStatus.push({ campId: camp.campId, checkDay, status: available ? "checked" : "missing", available })
+    })
+    anomalies.sort((a, b) => severityWeight(b.severity) - severityWeight(a.severity) || b.gap - a.gap)
+    return { anomalies, campStatus }
+  }
+
+  function alertLevelByDeviation(relativeDeviation) {
+    if (relativeDeviation >= 0.2) return { key: "red", label: "红色", className: "bad", weight: 3 }
+    if (relativeDeviation >= 0.1) return { key: "orange", label: "橙色", className: "orange", weight: 2 }
+    if (relativeDeviation >= 0.05) return { key: "yellow", label: "黄色", className: "warn", weight: 1 }
+    return null
+  }
+
+  function historicalEntityMatches(kind, current, candidate) {
+    if (normalizeProjectName(candidate.projectName) !== normalizeProjectName(current.projectName)) return false
+    if (kind === "group") return candidate.groupName === current.groupName
+    if (kind === "smallGroup") return candidate.groupName === current.groupName && candidate.smallGroupName === current.smallGroupName
+    return true
+  }
+
+  function hierarchicalYesterdayAnomalies(activeCamps, scopedGroups, scopedSmallGroups, scopedClasses) {
+    const metricSpecs = [
+      { key: "到播", label: "到播率", inverse: false, formatter: formatPct },
+      { key: "留存", label: "留存率", inverse: false, formatter: formatPct },
+      { key: "回复", label: "班长回复率", inverse: false, formatter: formatPct },
+      { key: "回复时长", label: "班长回复时长", inverse: true, formatter: (value) => `${formatNum(value, 0)}秒` }
+    ]
+    const definitions = [
+      { kind: "project", label: "项目", current: activeCamps, history: state.model.campSnapshots || [] },
+      { kind: "group", label: "大组", current: scopedGroups, history: state.model.groupSnapshots || [] },
+      { kind: "smallGroup", label: "小组", current: scopedSmallGroups, history: state.model.smallGroupSnapshots || [] },
+      { kind: "class", label: "班长", current: scopedClasses, history: state.model.classSnapshots || [] }
+    ]
+    const records = []
+    const campStatus = []
+    let insufficientBaselines = 0
+
+    activeCamps.forEach((camp) => {
+      const checkDay = camp.status === "已结营" ? 7 : Math.max(0, (camp.day || 0) - 1)
+      const currentStage = camp.status === "已结营" ? "结营次日" : `Day${camp.day || "-"}`
+      if (checkDay < 1) {
+        campStatus.push({ campId: camp.campId, checkDay, status: "waiting", available: 0 })
+        return
+      }
+      let available = 0
+      definitions.forEach((definition) => {
+        const currentItems = definition.current.filter((item) => item.campId === camp.campId)
+        currentItems.forEach((item) => {
+          metricSpecs.forEach((spec) => {
+            const field = `day${checkDay}${spec.key}`
+            const value = firstMetric(item.raw, item.supplement, [field])
+            if (!Number.isFinite(value)) return
+            available += 1
+            let benchmark = null
+            let baselineLabel = ""
+            let sampleCount = 0
+
+            if (definition.kind === "class") {
+              const peers = scopedClasses.filter((peer) => peer.campId === camp.campId && Number.isFinite(firstMetric(peer.raw, peer.supplement, [field])))
+              const peerValues = peers.map((peer) => firstMetric(peer.raw, peer.supplement, [field])).filter(Number.isFinite)
+              benchmark = avg(peerValues)
+              sampleCount = peerValues.length
+              baselineLabel = `同营期${sampleCount}位班长均值`
+            } else {
+              const historyItems = definition.history
+                .filter((candidate) => candidate.campId !== camp.campId
+                  && candidate.startDate && camp.startDate && candidate.startDate < camp.startDate
+                  && historicalEntityMatches(definition.kind, item, candidate)
+                  && Number.isFinite(firstMetric(candidate.raw, candidate.supplement, [field])))
+                .sort((a, b) => (b.startDate?.getTime() || 0) - (a.startDate?.getTime() || 0))
+                .slice(0, 5)
+              sampleCount = historyItems.length
+              if (sampleCount) {
+                const aggregate = buildSnapshotAggregateItem(historyItems, "历史基准")
+                benchmark = firstMetric(aggregate?.raw, aggregate?.supplement, [field])
+              }
+              baselineLabel = `历史${sampleCount}期同Day基准`
+            }
+
+            if (!Number.isFinite(benchmark) || !sampleCount) {
+              insufficientBaselines += 1
+              return
+            }
+
+            let relativeDeviation = spec.inverse
+              ? (value - benchmark) / Math.max(Math.abs(benchmark), 0.01)
+              : (benchmark - value) / Math.max(Math.abs(benchmark), 0.01)
+            let alert = alertLevelByDeviation(relativeDeviation)
+            let ruleLabel = baselineLabel
+
+            if (definition.kind === "class" && spec.key === "回复时长") {
+              const threshold = checkDay <= 5 ? 1800 : 3600
+              if (value <= threshold) return
+              relativeDeviation = (value - threshold) / threshold
+              alert = alertLevelByDeviation(Math.max(relativeDeviation, 0.05))
+              benchmark = threshold
+              ruleLabel = checkDay <= 5 ? "固定预警线30分钟" : "固定预警线1小时"
+            } else if (definition.kind === "class" && spec.key === "回复") {
+              const threshold = checkDay <= 5 ? 0.9 : checkDay === 6 ? 0.7 : 0.6
+              if (value >= threshold) return
+              relativeDeviation = (threshold - value) / threshold
+              alert = alertLevelByDeviation(Math.max(relativeDeviation, 0.05))
+              benchmark = threshold
+              ruleLabel = `固定预警线${formatPct(threshold, 0)}`
+            }
+
+            if (!alert) return
+            const objectName = definition.kind === "project"
+              ? (item.projectName || "默认项目")
+              : definition.kind === "group"
+                ? item.groupName
+                : definition.kind === "smallGroup"
+                  ? `${item.groupName} / ${item.smallGroupName}`
+                  : `${item.groupName} / ${item.smallGroupName} / ${item.className}`
+            records.push({
+              dimension: definition.label,
+              kind: definition.kind,
+              projectName: item.projectName || "默认项目",
+              campId: camp.campId,
+              className: item.className || "",
+              currentDay: camp.day,
+              currentStage,
+              checkDay,
+              objectName,
+              metric: spec.label,
+              value,
+              benchmark,
+              baselineLabel: ruleLabel,
+              formatter: spec.formatter,
+              alert,
+              relativeDeviation
+            })
+          })
+        })
+      })
+      campStatus.push({ campId: camp.campId, checkDay, status: available ? "checked" : "missing", available })
+    })
+    records.sort((a, b) => b.alert.weight - a.alert.weight || b.relativeDeviation - a.relativeDeviation)
+    return { anomalies: records, campStatus, insufficientBaselines }
+  }
+
+  function comparisonInline(current, previous, formatter = formatPct) {
+    if (!Number.isFinite(current)) return `<span class="overview-metric-main">—</span>`
+    if (!Number.isFinite(previous)) return `<span class="overview-metric-main">${formatter(current)}</span><small>无前期基线</small>`
+    const diff = current - previous
+    const direction = Math.abs(diff) < 1e-9 ? "持平" : diff > 0 ? "↑" : "↓"
+    return `<span class="overview-metric-main">${formatter(current)}</span><small>${direction} ${formatter(Math.abs(diff))}</small>`
+  }
+
+  function projectHistoryForDay(camp, field) {
+    return (state.model.campSnapshots || [])
+      .filter((item) => item.campId !== camp.campId
+        && normalizeProjectName(item.projectName) === normalizeProjectName(camp.projectName)
+        && item.startDate && camp.startDate && item.startDate < camp.startDate
+        && Number.isFinite(firstMetric(item.raw, item.supplement, [field])))
+      .sort((a, b) => (b.startDate?.getTime() || 0) - (a.startDate?.getTime() || 0))
+      .slice(0, 5)
+  }
+
+  function dayMetricWithBenchmark(camp, checkDay, suffix, stageStart = 1) {
+    if (checkDay < stageStart) return { value: null, benchmark: null, status: "暂未进入", alert: null }
+    const field = `day${checkDay}${suffix}`
+    const value = firstMetric(camp.raw, camp.supplement, [field])
+    const history = projectHistoryForDay(camp, field)
+    const aggregate = history.length ? buildSnapshotAggregateItem(history, "历史基准") : null
+    const benchmark = firstMetric(aggregate?.raw, aggregate?.supplement, [field])
+    if (!Number.isFinite(value)) return { value, benchmark, status: "数据未更新", alert: null }
+    if (!Number.isFinite(benchmark)) return { value, benchmark, status: "基准不足", alert: null }
+    const deviation = (benchmark - value) / Math.max(Math.abs(benchmark), 0.01)
+    const alert = alertLevelByDeviation(deviation)
+    return { value, benchmark, status: alert ? `${alert.label}预警` : "正常", alert, deviation, sampleCount: history.length }
+  }
+
+  function effectiveAttendMetric(camp, checkDay) {
+    const attend = dayMetricWithBenchmark(camp, checkDay, "到播")
+    const retention = dayMetricWithBenchmark(camp, checkDay, "留存")
+    const value = Number.isFinite(attend.value) && Number.isFinite(retention.value) ? attend.value * retention.value : null
+    const fieldAttend = `day${checkDay}到播`
+    const fieldRetention = `day${checkDay}留存`
+    const candidates = (state.model.campSnapshots || [])
+      .filter((item) => item.campId !== camp.campId
+        && normalizeProjectName(item.projectName) === normalizeProjectName(camp.projectName)
+        && item.startDate && camp.startDate && item.startDate < camp.startDate)
+      .sort((a, b) => (b.startDate?.getTime() || 0) - (a.startDate?.getTime() || 0))
+      .map((item) => {
+        const a = firstMetric(item.raw, item.supplement, [fieldAttend])
+        const r = firstMetric(item.raw, item.supplement, [fieldRetention])
+        return Number.isFinite(a) && Number.isFinite(r) ? a * r : null
+      })
+      .filter(Number.isFinite)
+      .slice(0, 5)
+    const benchmark = avg(candidates)
+    if (!Number.isFinite(value)) return { value, benchmark, status: "数据未更新", alert: null, attend, retention }
+    if (!Number.isFinite(benchmark)) return { value, benchmark, status: "基准不足", alert: null, attend, retention }
+    const deviation = (benchmark - value) / Math.max(Math.abs(benchmark), 0.01)
+    const alert = alertLevelByDeviation(deviation)
+    return { value, benchmark, status: alert ? `${alert.label}预警` : "正常", alert, deviation, attend, retention }
+  }
+
+  function anomalyBusinessJudgement(metric) {
+    if (/到播率/.test(metric)) return "用户召回不足，直播间覆盖用户偏少"
+    if (/留存率/.test(metric)) return "直播内容承接偏弱，有效听课用户不足"
+    if (/回复率/.test(metric)) return "班长触达覆盖不足，可能影响用户承接"
+    if (/回复时长/.test(metric)) return "班长响应不及时，需要当天介入"
+    return "该指标低于对应基准，需要进一步下钻确认"
+  }
+
+  function buildCampBroadcast(camp, process) {
+    const checkDay = Math.max(0, (camp.day || 0) - 1)
+    if (checkDay < 1) return `【${camp.projectName || "默认项目"}｜${camp.campId}｜Day1播报】\n\n当前为Day1，昨日暂无完整课程数据，明早开始检查Day1表现。`
+    const effective = effectiveAttendMetric(camp, checkDay)
+    const pending = dayMetricWithBenchmark(camp, checkDay, "待支付率", 3)
+    const pendingConv = dayMetricWithBenchmark(camp, checkDay, "待支付转率", 3)
+    const conv = dayMetricWithBenchmark(camp, checkDay, "转率", 3)
+    const metricAlerts = [effective, pending, pendingConv, conv].map((item) => item.alert).filter(Boolean)
+    const campAnomalies = process.anomalies.filter((item) => item.campId === camp.campId)
+    const allAlerts = [...metricAlerts, ...campAnomalies.map((item) => item.alert)]
+    const counts = {
+      red: allAlerts.filter((item) => item.key === "red").length,
+      orange: allAlerts.filter((item) => item.key === "orange").length,
+      yellow: allAlerts.filter((item) => item.key === "yellow").length
     }
-    dom.actionList.innerHTML = scopedRecommendations.length ? scopedRecommendations.map((item) => `
-      <div class="stack-item">
-        <div class="stack-title">
-          <span>${item.title}</span>
-          <span class="tag ${severityClass(item.severity)}">${severityLabel(item.severity)}</span>
-        </div>
-        <div class="stack-meta">关注指标：${item.metric}</div>
-        <div class="stack-meta">建议动作：${item.advice}</div>
-        <div class="stack-meta">建议下钻：${item.drillPath}</div>
-      </div>
-    `).join("") : `<div class="stack-item">暂无行动建议。</div>`
+    const overall = counts.red ? "高风险" : counts.orange ? "异常" : counts.yellow ? "需关注" : "正常"
+    let blockage = "暂未发现明显阻塞"
+    let judgement = "昨日关键链路整体处于正常波动范围，继续观察今日数据。"
+    if (effective.attend.alert) {
+      blockage = "添加→到播"
+      judgement = "用户召回偏弱，可能影响后续直播间有效用户池。"
+    } else if (effective.retention.alert || effective.alert) {
+      blockage = "到播→有效听课"
+      judgement = "用户已经进入直播间，但内容承接和有效听课表现偏弱。"
+    } else if (pending.alert) {
+      blockage = "有效听课→待支付"
+      judgement = "有效听课用户未充分形成购买意向，需要检查直播间转化承接。"
+    } else if (pendingConv.alert || conv.alert) {
+      blockage = "待支付→成交"
+      judgement = "购买意向已经形成，但支付催化和后续收回效率偏弱。"
+    }
+    const topAnomalies = campAnomalies.filter((item) => item.kind === "smallGroup" || item.kind === "class").slice(0, 3)
+    const anomalyLines = [0, 1, 2].map((index) => {
+      const item = topAnomalies[index]
+      return item
+        ? `${index + 1}. ${item.alert.key === "red" ? "🔴" : item.alert.key === "orange" ? "🟠" : "🟡"} ${item.objectName}：${item.metric}${item.formatter(item.value)}，${anomalyBusinessJudgement(item.metric)}`
+        : `${index + 1}. 暂无更多重点异常`
+    }).join("\n")
+    const actions = []
+    if (blockage === "添加→到播") actions.push("复盘昨日召回触达情况，优先跟进到播偏低的小组和班长。")
+    else if (blockage === "到播→有效听课") actions.push("复盘直播内容承接与课堂节奏，重点检查低留存小组。")
+    else if (blockage === "有效听课→待支付") actions.push("检查直播间购买意向引导，复盘待支付率偏低环节。")
+    else if (blockage === "待支付→成交") actions.push("盘点待支付用户并加强支付催化和个销跟进。")
+    else actions.push("保持当前运营节奏，持续观察今日关键指标。")
+    if (campAnomalies.some((item) => item.kind === "class" && /回复/.test(item.metric))) actions.push("当天完成异常班长回复情况核查，并明确整改时点。")
+    else actions.push("关注小组和班长执行情况，避免过程指标出现明显下滑。")
+    actions.push(`明早复查Day${camp.day}完整数据，确认异常是否恢复。`)
 
-    renderTable(dom.riskRanking, ["排名", "对象", "指标", "原因", "等级"], scopedAnomalies.slice(0, 10).map((item, index) => [
-      String(index + 1),
-      item.type === "camp" ? `营期 ${item.campId}` : `${item.groupName}｜营期 ${item.campId}`,
+    const metricLine = (label, metric) => {
+      if (metric.status === "暂未进入") return `- ${label}：暂未进入`
+      if (!Number.isFinite(metric.value)) return `- ${label}：数据未更新`
+      return `- ${label}：${formatPct(metric.value)}｜基准${formatPct(metric.benchmark)}｜${metric.status}`
+    }
+    const coreConclusion = `${blockage === "暂未发现明显阻塞" ? "昨日关键链路整体正常" : `昨日主要卡在“${blockage}”环节`}；${judgement}`
+    return `【${camp.projectName || "默认项目"}｜${camp.campId}｜Day${camp.day}播报】
+
+昨日判断：${overall}｜预警 🔴${counts.red} 🟠${counts.orange} 🟡${counts.yellow}
+
+核心结论：
+${coreConclusion}
+
+关键指标：
+${metricLine("有效到播率", effective)}
+  到播${formatPct(effective.attend.value)}，留存${formatPct(effective.retention.value)}
+${metricLine("待支付率", pending)}
+${metricLine("待支付转率", pendingConv)}
+${metricLine("转率", conv)}
+
+主要阻塞：
+${blockage}
+${judgement}
+
+重点异常：
+${anomalyLines}
+
+今日动作：
+1. ${actions[0]}
+2. ${actions[1]}
+3. ${actions[2]}`
+  }
+
+  function renderOverview(camps, groups, smallGroups, classes) {
+    const activeCamps = camps.filter((item) => item.status === "进行中").sort(compareStart)
+    const yesterday = new Date(state.filters.asOfDate.getFullYear(), state.filters.asOfDate.getMonth(), state.filters.asOfDate.getDate() - 1)
+    const justClosedCamps = camps.filter((item) => item.status === "已结营" && item.endDate && formatDate(item.endDate) === formatDate(yesterday))
+    const monitoredCamps = [...activeCamps, ...justClosedCamps]
+    const closedCamps = camps.filter((item) => item.status === "已结营").sort((a, b) => (b.endDate?.getTime() || 0) - (a.endDate?.getTime() || 0)).slice(0, 3)
+    const process = hierarchicalYesterdayAnomalies(monitoredCamps, groups, smallGroups, classes)
+    const missingCount = process.campStatus.filter((item) => item.status === "missing").length
+    const highRiskCount = process.anomalies.filter((item) => item.alert.key === "red").length
+    state.ui.campBroadcasts = Object.fromEntries(activeCamps.map((camp) => [String(camp.campId), buildCampBroadcast(camp, process)]))
+
+    dom.overviewPulse.innerHTML = `
+      <div>
+        <div class="section-kicker">今日运营焦点</div>
+        <h3>${process.anomalies.length ? `发现 ${process.anomalies.length} 项昨日分层异常` : "昨日过程暂未发现明显异常"}</h3>
+        <p>${activeCamps.length} 个进行中营期，${justClosedCamps.length ? `${justClosedCamps.length} 个结营次日营期，` : ""}${closedCamps.length} 个最近结营营期${missingCount ? `；${missingCount} 个营期昨日数据尚未更新` : ""}。</p>
+      </div>
+      <div class="overview-pulse-stats">
+        <span><strong>${activeCamps.length}</strong>进行中</span>
+        <span class="${highRiskCount ? "bad" : ""}"><strong>${highRiskCount}</strong>高风险</span>
+        <span class="${missingCount ? "warn" : ""}"><strong>${missingCount}</strong>待更新</span>
+      </div>`
+
+    const monitoredCampIds = new Set(monitoredCamps.map((item) => item.campId))
+    if (state.ui.overviewFocusedCampId && !monitoredCampIds.has(state.ui.overviewFocusedCampId)) {
+      state.ui.overviewFocusedCampId = null
+    }
+
+    dom.activeCampCards.innerHTML = activeCamps.length ? activeCamps.map((camp) => {
+      const status = process.campStatus.find((item) => item.campId === camp.campId)
+      const anomalyCount = process.anomalies.filter((item) => item.campId === camp.campId).length
+      const statusText = status?.status === "waiting" ? "Day1运营中，明早开始检查" : status?.status === "missing" ? `Day${status.checkDay}数据尚未更新` : `已检查Day${status?.checkDay || "-"}完整数据`
+      const isFocused = state.ui.overviewFocusedCampId === camp.campId
+      return `<div class="active-camp-card ${isFocused ? "is-focused" : ""}">
+        <div class="active-camp-head"><div class="active-camp-title"><span class="tag neutral">项目｜${camp.projectName || "默认项目"}</span><strong>${camp.campId}营期</strong><span>当前 Day${camp.day || "-"}</span></div><span class="tag ${anomalyCount ? "warn" : "good"}">${anomalyCount ? `${anomalyCount}项异常` : statusText}</span></div>
+        <div class="active-camp-check">${statusText}</div>
+        <div class="active-camp-metrics">
+          <span><small>待支付率</small><strong>${formatPct(overviewFocusMetric(camp, "pendingRate"))}</strong></span>
+          <span><small>待支付转率</small><strong>${formatPct(overviewFocusMetric(camp, "pendingConv"))}</strong></span>
+          <span><small>高沉浸率</small><strong>${formatPct(overviewFocusMetric(camp, "highImmerseRate"))}</strong></span>
+          <span><small>高沉浸转率</small><strong>${formatPct(overviewFocusMetric(camp, "highImmerseConvRate"))}</strong></span>
+        </div>
+        <div class="active-camp-actions">
+          <button class="drill-action" data-action="${anomalyCount ? "focus-overview-camp-anomalies" : "jump-camp-filtered"}" data-camp-id="${camp.campId}" type="button">${anomalyCount ? "查看分层异常" : "查看营期"} →</button>
+          <button class="drill-action copy-broadcast-btn" data-action="copy-camp-broadcast" data-camp-id="${camp.campId}" type="button">复制播报</button>
+        </div>
+      </div>`
+    }).join("") : `<div class="stack-item">当前筛选范围内没有进行中的营期。</div>`
+
+    const focusedCampId = state.ui.overviewFocusedCampId
+    const focusedCamp = focusedCampId ? monitoredCamps.find((item) => item.campId === focusedCampId) : null
+    const visibleAnomalies = focusedCamp ? process.anomalies.filter((item) => item.campId === focusedCampId) : process.anomalies
+    if (dom.yesterdayAnomalyFocus) {
+      if (focusedCamp) {
+        dom.yesterdayAnomalyFocus.classList.remove("hidden")
+        dom.yesterdayAnomalyFocus.innerHTML = `
+          <span><strong>当前仅展示：</strong>项目｜${focusedCamp.projectName || "默认项目"} · 营期｜${focusedCamp.campId}</span>
+          <button class="table-link-btn" data-action="clear-overview-anomaly-focus" type="button">查看全部营期异常</button>
+        `
+      } else {
+        dom.yesterdayAnomalyFocus.classList.add("hidden")
+        dom.yesterdayAnomalyFocus.innerHTML = ""
+      }
+    }
+
+    const anomalyRows = visibleAnomalies.map((item) => [
+      `<span class="tag ${item.alert.className}">${item.alert.label}</span>`,
+      item.projectName,
+      item.campId,
+      item.currentStage,
+      `Day${item.checkDay}`,
+      item.dimension,
+      item.objectName,
       item.metric,
-      item.reason,
-      severityLabel(item.severity)
-    ]))
+      item.formatter(item.value),
+      `${item.formatter(item.benchmark)}<small>${item.baselineLabel}</small>`,
+      item.kind === "class"
+        ? `<button class="table-link-btn" data-action="jump-class-byday" data-class-name="${item.className}" data-camp-id="${item.campId}" type="button">查看班长</button>`
+        : `<button class="table-link-btn" data-action="jump-analysis" data-target-tab="${item.kind === "project" ? "camp" : item.kind === "group" ? "group" : "small-group"}" type="button">查看${item.dimension}</button>`
+    ])
+    if (anomalyRows.length) {
+      renderTable(dom.yesterdayAnomalyTable, ["预警", "项目", "营期", "当前阶段", "检查日", "维度", "对象", "异常指标", "当前值", "基准", "操作"], anomalyRows)
+    } else {
+      const allWaiting = monitoredCamps.length && process.campStatus.every((item) => item.status === "waiting")
+      const message = focusedCamp
+        ? `项目｜${focusedCamp.projectName || "默认项目"} · 营期｜${focusedCamp.campId} 当前未发现达到预警线的分层异常。`
+        : missingCount
+        ? "昨日过程数据尚未更新，当前无法完成异常检查。"
+        : allWaiting
+          ? "当前营期处于Day1，明早开始检查Day1完整数据。"
+          : monitoredCamps.length
+            ? "昨日过程数据已完成检查，暂未发现达到预警线的异常。"
+            : "当前筛选范围内没有进行中的营期。"
+      dom.yesterdayAnomalyTable.innerHTML = `<div class="stack-item">${message}</div>`
+    }
+
+    const recentRows = closedCamps.map((camp) => ({
+      camp,
+      roi: camp.metrics.roi,
+      outputPerLeader: ratio(camp.metrics.revenue, camp.metrics.leaderCount),
+      pendingRate: overviewFocusMetric(camp, "pendingRate"),
+      pendingConv: overviewFocusMetric(camp, "pendingConv"),
+      highImmerseRate: overviewFocusMetric(camp, "highImmerseRate"),
+      highImmerseConvRate: overviewFocusMetric(camp, "highImmerseConvRate")
+    }))
+    const latest = recentRows[0]
+    const latestIssues = latest ? [latest.roi < ROI_TARGET ? "ROI低于0.8" : "", latest.outputPerLeader < OUTPUT_PER_LEADER_TARGET ? "人均产能低于1.5万元" : ""].filter(Boolean) : []
+    dom.recentClosedSummary.innerHTML = latest
+      ? `<strong>最新结营：${latest.camp.campId}营期</strong><span>${latestIssues.length ? latestIssues.join("，") : "ROI与人均产能均达到目标"}。</span>`
+      : `<span>当前筛选范围内暂无已结营数据。</span>`
+    renderTable(dom.recentClosedTable, ["营期", "结营时间", "ROI / 目标0.8", "人均产能 / 目标1.5万", "待支付率", "待支付转率", "高沉浸率", "高沉浸转率", "操作"], recentRows.map((item, index) => {
+      const previous = recentRows[index + 1]
+      return [
+        item.camp.campId,
+        formatDate(item.camp.endDate),
+        `<span class="target-value ${item.roi >= ROI_TARGET ? "good" : "bad"}">${formatNum(item.roi, 2)}</span>`,
+        `<span class="target-value ${item.outputPerLeader >= OUTPUT_PER_LEADER_TARGET ? "good" : "bad"}">${formatMoney(item.outputPerLeader)}</span>`,
+        comparisonInline(item.pendingRate, previous?.pendingRate),
+        comparisonInline(item.pendingConv, previous?.pendingConv),
+        comparisonInline(item.highImmerseRate, previous?.highImmerseRate),
+        comparisonInline(item.highImmerseConvRate, previous?.highImmerseConvRate),
+        `<button class="table-link-btn" data-action="jump-camp-filtered" data-camp-id="${item.camp.campId}" type="button">查看营期</button>`
+      ]
+    }))
   }
 
   function anomalyCard(item) {
@@ -2316,6 +2898,7 @@
         <div class="stack-meta">异常指标：${item.metric}｜当前值：${displayMetricValue(item.metric, item.value)}</div>
         <div class="stack-meta">触发原因：${item.reason}</div>
         <div class="stack-meta">建议下钻：${item.drillPath}</div>
+        <button class="drill-action" data-action="jump-analysis" data-target-tab="${item.type === "group" ? "group" : "camp"}" type="button">下钻查看 →</button>
       </div>
     `
   }
@@ -2426,6 +3009,7 @@
     }
     Plotly.newPlot("campTrendCombo", campTrendTraces, baseLayout({
       barmode: "group",
+      xaxis: fullCategoryAxis(dimensionItems.map((item) => item.dimensionLabel)),
       yaxis: { title: "添加成本 / 添加产值", color: PLOT_MUTED, gridcolor: PLOT_GRID },
       yaxis2: { title: "ROI", overlaying: "y", side: "right", color: PLOT_MUTED },
       shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y2", y0: ROI_TARGET, y1: ROI_TARGET, line: { color: "rgba(15,23,42,0.25)", dash: "dot" } }]
@@ -2449,7 +3033,7 @@
     }], formatChartPercent), baseLayout({
       margin: { l: 50, r: 14, t: 24, b: 56 },
       showlegend: false,
-      xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+      xaxis: fullCategoryAxis(axisLabels),
       yaxis: { title: "待支付率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
     }), plotConfig)
 
@@ -2473,7 +3057,7 @@
     ], formatChartPercent), baseLayout({
       margin: { l: 50, r: 42, t: 24, b: 56 },
       barmode: "group",
-      xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+      xaxis: fullCategoryAxis(axisLabels),
       yaxis: { title: "Day3 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
       yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
     }), plotConfig)
@@ -2498,7 +3082,7 @@
     ], formatChartPercent), baseLayout({
       margin: { l: 50, r: 42, t: 24, b: 56 },
       barmode: "group",
-      xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+      xaxis: fullCategoryAxis(axisLabels),
       yaxis: { title: "D6-D7 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
       yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
     }), plotConfig)
@@ -2547,8 +3131,12 @@
     }), plotConfig)
     renderHeatmap(`${prefix}HmOrder`, dimensionItems, (item, day) => orderShare(item, day), (value) => formatPct(value), false)
     renderHeatmap(`${prefix}HmConv`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}转率`]), (value) => formatPct(value, 2), false)
-    renderHeatmap(`${prefix}HmPending`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付率`, "待支付率"]), (value) => formatPct(value, 2), false)
+    renderHeatmap(`${prefix}HmPending`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付率`, "待支付率"]), (value) => formatPct(value, 2), false, true)
     renderHeatmap(`${prefix}HmPendingConv`, dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}待支付转率`]), (value) => formatPct(value, 2), false)
+    if (prefix === "camp") {
+      renderHeatmap("campHmAttendConv", dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}到播转率`]), (value) => formatPct(value, 2), false)
+      renderHeatmap("campHmIndividualConv", dimensionItems, (item, day) => firstMetric(item.raw, item.supplement, [`day${day}个销转率`]), (value) => formatPct(value, 2), false)
+    }
   }
 
   function drillPathItems(drill) {
@@ -2870,25 +3458,35 @@
     }).sort((a, b) => (b.roi || 0) - (a.roi || 0))
   }
 
-  function buildEntityTrendRows(items, kind) {
-    return Array.from(groupBy(items.filter((item) => item.weekKey), (item) => `${item.weekKey}__${entityKey(kind, item)}`).entries()).map(([key, bucket]) => {
+  function buildEntityTrendRows(items, kind, dimension = "camp") {
+    const isWeek = dimension === "week"
+    const validItems = items.filter((item) => isWeek ? item.weekKey : String(item.campId || "").trim())
+    const periodKeyOf = (item) => isWeek ? item.weekKey : String(item.campId || "").trim()
+    return Array.from(groupBy(validItems, (item) => `${periodKeyOf(item)}__${entityKey(kind, item)}`).entries()).map(([key, bucket]) => {
       const splitIndex = key.indexOf("__")
-      const weekKey = splitIndex >= 0 ? key.slice(0, splitIndex) : key
+      const periodKey = splitIndex >= 0 ? key.slice(0, splitIndex) : key
       const entityCompositeKey = splitIndex >= 0 ? key.slice(splitIndex + 2) : key
       const base = bucket[0]
       return {
         key: entityCompositeKey,
-        weekKey,
-        weekLabel: base?.weekLabel || weekKey,
-        weekShortLabel: base?.weekShortLabel || weekKey,
-        weekStartDate: base?.weekStartDate || parseStartDate(weekKey),
+        periodKey,
+        periodLabel: isWeek ? (base?.weekShortLabel || base?.weekLabel || periodKey) : String(base?.campId || periodKey),
+        periodFullLabel: isWeek ? (base?.weekLabel || periodKey) : String(base?.campId || periodKey),
+        periodStartDate: isWeek ? (base?.weekStartDate || null) : (base?.startDate || null),
         entityName: entityDisplay(kind, base || {}),
         groupName: base?.groupName || "未知大组",
         smallGroupName: base?.smallGroupName || "未知小组",
         campCount: uniq(bucket.map((item) => item.campId)).length,
         ...aggregateGroupMetrics(bucket)
       }
-    }).sort((a, b) => (a.weekStartDate?.getTime() || 0) - (b.weekStartDate?.getTime() || 0) || a.entityName.localeCompare(b.entityName, "zh-CN"))
+    }).sort((a, b) => {
+      const timeA = a.periodStartDate?.getTime()
+      const timeB = b.periodStartDate?.getTime()
+      if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) return timeA - timeB
+      if (Number.isFinite(timeA) !== Number.isFinite(timeB)) return Number.isFinite(timeA) ? -1 : 1
+      const periodCompare = String(a.periodKey || "").localeCompare(String(b.periodKey || ""), "zh-CN", { numeric: true })
+      return periodCompare || a.entityName.localeCompare(b.entityName, "zh-CN")
+    })
   }
 
   function pickBestMetricRow(rows, spec) {
@@ -3884,9 +4482,9 @@
       textfont: { size: 11, color: "#f8fafc" },
       hovertemplate: "%{label}<br>占比: %{percent}<br>班长数: %{value}<extra></extra>"
     }], baseLayout({
-      margin: { l: 16, r: 16, t: 20, b: 20 },
+      margin: { l: 16, r: 16, t: 20, b: 56 },
       showlegend: true,
-      legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.08, font: { color: PLOT_TEXT } },
+      legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.02, font: { color: PLOT_TEXT } },
       annotations: [{
         text: `班长总数<br>${Math.round(row.leaderCount || 0)}人`,
         showarrow: false,
@@ -4188,17 +4786,24 @@
   function renderEntityTrendChart(rows, spec) {
     const grouped = Array.from(groupBy(rows, (item) => item.entityName).entries()).sort((a, b) => a[0].localeCompare(b[0], "zh-CN"))
     const traces = grouped.map(([groupName, items]) => {
-      const ordered = items.slice().sort((a, b) => (a.weekStartDate?.getTime() || 0) - (b.weekStartDate?.getTime() || 0))
+      const ordered = items.slice().sort((a, b) => {
+        const timeA = a.periodStartDate?.getTime()
+        const timeB = b.periodStartDate?.getTime()
+        if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) return timeA - timeB
+        if (Number.isFinite(timeA) !== Number.isFinite(timeB)) return Number.isFinite(timeA) ? -1 : 1
+        return String(a.periodKey || "").localeCompare(String(b.periodKey || ""), "zh-CN", { numeric: true })
+      })
       return {
         type: "scatter",
         mode: "lines+markers",
         name: groupName,
-        x: ordered.map((item) => item.weekShortLabel || item.weekLabel),
+        x: ordered.map((item) => item.periodLabel),
         y: ordered.map((item) => spec.value(item))
       }
     }).filter((trace) => trace.y.some((item) => Number.isFinite(item)))
     Plotly.newPlot(spec.chartId, withValueLabels(traces, spec.tickformat ? formatChartPercent : formatChartNumber), baseLayout({
       margin: { l: 46, r: 16, t: 24, b: 56 },
+      xaxis: fullCategoryAxis(rows.map((item) => item.periodLabel)),
       yaxis: { title: spec.label, tickformat: spec.tickformat || undefined, color: PLOT_MUTED, gridcolor: PLOT_GRID, rangemode: "tozero" }
     }), plotConfig)
   }
@@ -4305,7 +4910,7 @@
         .filter(Boolean)
         .sort((a, b) => (a.weekStartDate?.getTime() || 0) - (b.weekStartDate?.getTime() || 0))
     }
-    return camps.map((item) => ({
+    return camps.slice().sort(compareStart).map((item) => ({
       ...item,
       dimensionKey: `camp__${String(item.campId || "")}`,
       dimensionLabel: String(item.campId || ""),
@@ -4662,6 +5267,9 @@
         name: compareRows.find((item) => item.key === key)?.entityName || key,
         items: items.filter((item) => entityKey(kind, item) === key).sort(compareStart)
       })).filter((item) => item.items.length)
+      const focusCampIds = uniq(focusGroups.flatMap((group) => group.items.map((item) => String(item.campId || ""))))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "zh-CN", { numeric: true }))
       const day3PendingTraces = focusGroups.map((group, index) => ({
         type: "scatter",
         mode: "lines+markers",
@@ -4674,7 +5282,7 @@
       Plotly.newPlot(config.focusChartIds.day3Pending, withValueLabels(day3PendingTraces, formatChartPercent), baseLayout({
         margin: { l: 50, r: 14, t: 24, b: 56 },
         showlegend: true,
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(focusCampIds),
         yaxis: { title: "待支付率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
       }), plotConfig)
 
@@ -4702,7 +5310,7 @@
       Plotly.newPlot(config.focusChartIds.day3ConvChase, withValueLabels(day3ComboTraces, formatChartPercent), baseLayout({
         margin: { l: 50, r: 42, t: 24, b: 56 },
         showlegend: true,
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(focusCampIds),
         yaxis: { title: "Day3 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
         yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
       }), plotConfig)
@@ -4731,7 +5339,7 @@
       Plotly.newPlot(config.focusChartIds.d6d7ConvChase, withValueLabels(d67ComboTraces, formatChartPercent), baseLayout({
         margin: { l: 50, r: 42, t: 24, b: 56 },
         showlegend: true,
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(focusCampIds),
         yaxis: { title: "D6-D7 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
         yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
       }), plotConfig)
@@ -4760,7 +5368,7 @@
       }], formatChartPercent), baseLayout({
         margin: { l: 50, r: 14, t: 24, b: 56 },
         showlegend: false,
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(campIds),
         yaxis: { title: "待支付率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID }
       }), plotConfig)
 
@@ -4784,7 +5392,7 @@
       ], formatChartPercent), baseLayout({
         margin: { l: 50, r: 42, t: 24, b: 56 },
         barmode: "group",
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(campIds),
         yaxis: { title: "Day3 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
         yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
       }), plotConfig)
@@ -4809,7 +5417,7 @@
       ], formatChartPercent), baseLayout({
         margin: { l: 50, r: 42, t: 24, b: 56 },
         barmode: "group",
-        xaxis: { tickangle: -20, color: PLOT_MUTED, gridcolor: PLOT_GRID_LIGHT, zerolinecolor: PLOT_GRID_LIGHT },
+        xaxis: fullCategoryAxis(campIds),
         yaxis: { title: "D6-D7 转率", tickformat: ".1%", color: PLOT_MUTED, gridcolor: PLOT_GRID },
         yaxis2: { title: "出单占比", tickformat: ".1%", overlaying: "y", side: "right", color: PLOT_MUTED }
       }), plotConfig)
@@ -4825,7 +5433,8 @@
   function renderEntitySection(items, kind, classItems = []) {
     const config = ENTITY_ANALYSIS_CONFIG[kind]
     const compareRows = buildEntityComparisonRows(items, kind, classItems)
-    const trendRows = buildEntityTrendRows(items, kind)
+    const trendDimension = state.ui[config.trendDimensionStateKey] || "camp"
+    const trendRows = buildEntityTrendRows(items, kind, trendDimension)
     const rhythmMetric = state.ui[config.orderRhythmStateKey] || "orderShare"
     const roiBest = pickBestMetricRow(compareRows, GROUP_COMPARE_METRICS[0])
     const efficiencyBest = pickBestMetricRow(compareRows, GROUP_COMPARE_METRICS[1])
@@ -4848,18 +5457,20 @@
     renderEntityOrderRhythmHeatmap(compareRows, config.orderRhythmHeatmapId, rhythmMetric)
 
     renderEntityFocusCards(items, compareRows, kind)
+    renderQuickSwitch(config.trendDimensionSwitch, [
+      { label: "营期维度", value: "camp" },
+      { label: "周维度", value: "week" }
+    ], trendDimension, { action: `${kind}-trend-dimension` })
     config.trendSpecs.forEach((spec) => renderEntityTrendChart(trendRows, spec))
     renderTable(document.getElementById(config.trendTableId), [
-      "周维度",
+      trendDimension === "week" ? "周维度" : "营期",
       ...(kind === "smallGroup" ? ["大组"] : []),
       config.label,
-      "覆盖营期",
       ...GROUP_COMPARE_METRICS.map((item) => item.label)
     ], trendRows.map((item) => [
-      item.weekLabel,
+      trendDimension === "week" ? item.periodFullLabel : item.periodLabel,
       ...(kind === "smallGroup" ? [item.groupName] : []),
       item.entityName,
-      String(item.campCount),
       ...GROUP_COMPARE_METRICS.map((spec) => spec.formatter(spec.value(item)))
     ]))
     if (kind === "smallGroup") renderSmallGroupRadarComparison(compareRows)
@@ -5136,14 +5747,16 @@
     })
   }
 
-  function renderHeatmap(id, items, resolver, formatter, includeGroupName) {
+  function renderHeatmap(id, items, resolver, formatter, includeGroupName, lowerIsBetter = false) {
     const yLabels = items.map((item) => String(item.seriesName || (includeGroupName ? `${item.groupName}-${item.campId}` : `营期${item.campId}`)))
     Plotly.newPlot(id, [{
       type: "heatmap",
       x: [3, 4, 5, 6, 7].map((day) => `day${day}`),
       y: yLabels,
       z: items.map((item) => [3, 4, 5, 6, 7].map((day) => resolver(item, day))),
-      colorscale: [[0, "#f8fafc"], [0.35, "#bfdbfe"], [0.7, "#86efac"], [1, "#fde68a"]],
+      colorscale: lowerIsBetter
+        ? [[0, "#dcfce7"], [0.5, "#fef3c7"], [1, "#fee2e2"]]
+        : [[0, "#fee2e2"], [0.5, "#fef3c7"], [1, "#dcfce7"]],
       text: items.map((item) => [3, 4, 5, 6, 7].map((day) => formatter(resolver(item, day)))),
       texttemplate: "%{text}",
       hovertemplate: "%{y}<br>%{x}<br>%{z}<extra></extra>"
@@ -5200,6 +5813,34 @@
     }
   }
 
+  async function copyCampBroadcast(campId, button) {
+    const text = state.ui.campBroadcasts?.[String(campId)]
+    if (!text) return
+    let copied = false
+    try {
+      await navigator.clipboard.writeText(text)
+      copied = true
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.setAttribute("readonly", "")
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      copied = document.execCommand("copy")
+      textarea.remove()
+    }
+    if (!button) return
+    const original = button.textContent
+    button.textContent = copied ? "已复制播报" : "复制失败"
+    button.classList.toggle("copied", copied)
+    setTimeout(() => {
+      button.textContent = original
+      button.classList.remove("copied")
+    }, 1800)
+  }
+
   function baseLayout(extra = {}) {
     return Object.assign({
       paper_bgcolor: "rgba(0,0,0,0)",
@@ -5212,18 +5853,56 @@
     }, extra)
   }
 
+  function fullCategoryAxis(labels, extra = {}) {
+    const categories = uniq((labels || []).map((label) => String(label ?? "")).filter(Boolean))
+    const density = categories.length
+    return Object.assign({
+      type: "category",
+      categoryorder: "array",
+      categoryarray: categories,
+      tickmode: "array",
+      tickvals: categories,
+      ticktext: categories,
+      tickangle: density > 20 ? -45 : density > 10 ? -30 : -15,
+      tickfont: { size: density > 20 ? 9 : density > 10 ? 10 : 11 },
+      automargin: true,
+      color: PLOT_MUTED,
+      gridcolor: PLOT_GRID_LIGHT,
+      zerolinecolor: PLOT_GRID_LIGHT
+    }, extra)
+  }
+
   function orderShare(item, day) {
     return firstMetric(item.raw, item.supplement, [`day${day}出单占比`, `day${day}出单比例`, `day${day}出单占比%`])
   }
 
+  const TAB_CONTEXT = {
+    overview: ["经营驾驶舱 / 经营总览", "先检查进行中营期的昨日小组异常，再复盘最近结营3期。"],
+    "project-compare": ["经营驾驶舱 / 项目对比", "横向比较项目经营表现，并逐层展开到大组、小组和班长。"],
+    camp: ["经营驾驶舱 / 营期分析", "面向单项目负责人查看各营期经营表现，再进入成本、转化节奏、过程指标与组织贡献分析。"],
+    group: ["组织分析 / 大组分析", "比较大组差异，聚焦单个大组趋势并继续下钻到小组与班长。"],
+    "small-group": ["组织分析 / 小组分析", "定位小组间差异，结合过程、转化和班长表现复盘。"],
+    class: ["组织分析 / 班长分析", "从能力分层、班型结构、ROI和By-day表现识别具体执行差异。"],
+    quality: ["数据管理 / 数据健康", "检查关键字段、过程数据覆盖率与分析口径，确认结论可信度。"]
+  }
+
+  function switchAnalysisTab(tabName, options = {}) {
+    const target = document.querySelector(`.tab[data-tab='${tabName}']`)
+    if (!target) return
+    state.ui.activeTab = tabName
+    document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabName))
+    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === tabName))
+    const context = TAB_CONTEXT[tabName] || ["分析工作台", ""]
+    if (dom.analysisBreadcrumb) dom.analysisBreadcrumb.textContent = context[0]
+    if (dom.analysisPageHint) dom.analysisPageHint.textContent = context[1]
+    renderActiveTab()
+    if (options.scroll !== false) dom.analysisBreadcrumb?.scrollIntoView({ behavior: "smooth", block: "start" })
+    resizeVisiblePlots()
+  }
+
   function bindTabs() {
     document.querySelectorAll(".tab").forEach((button) => {
-      button.addEventListener("click", () => {
-        state.ui.activeTab = button.dataset.tab
-        document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab === button))
-        document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === state.ui.activeTab))
-        resizeVisiblePlots()
-      })
+      button.addEventListener("click", () => switchAnalysisTab(button.dataset.tab))
     })
   }
 
@@ -5392,6 +6071,14 @@
         const button = event.target.closest(`[data-action='${kind}-rhythm-metric']`)
         if (!button) return
         state.ui[config.orderRhythmStateKey] = button.dataset.value || "orderShare"
+        const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
+        if (kind === "group") renderGroupSection(scoped.groupSnapshots, scoped.classSnapshots)
+        else renderSmallGroupSection(scoped.smallGroupSnapshots, scoped.classSnapshots)
+      })
+      config.trendDimensionSwitch?.addEventListener("click", (event) => {
+        const button = event.target.closest(`[data-action='${kind}-trend-dimension']`)
+        if (!button) return
+        state.ui[config.trendDimensionStateKey] = button.dataset.value || "camp"
         const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
         if (kind === "group") renderGroupSection(scoped.groupSnapshots, scoped.classSnapshots)
         else renderSmallGroupSection(scoped.smallGroupSnapshots, scoped.classSnapshots)
@@ -5575,6 +6262,42 @@
       openChartModal(button.dataset.chart, button.dataset.title)
     })
 
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='jump-analysis']")
+      if (!button) return
+      switchAnalysisTab(button.dataset.targetTab || "overview")
+    })
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='jump-camp-filtered']")
+      if (!button) return
+      openCampAnalysisWithCamp(button.dataset.campId || "")
+    })
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='jump-class-byday']")
+      if (!button) return
+      openClassByDayWithContext(button.dataset.className || "", button.dataset.campId || "")
+    })
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='focus-overview-camp-anomalies']")
+      if (!button) return
+      focusOverviewCampAnomalies(button.dataset.campId || "")
+    })
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='clear-overview-anomaly-focus']")
+      if (!button) return
+      clearOverviewCampAnomalyFocus()
+    })
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='copy-camp-broadcast']")
+      if (!button) return
+      copyCampBroadcast(button.dataset.campId || "", button)
+    })
+
     dom.toggleFiltersBtn?.addEventListener("click", () => {
       state.ui.filterCollapsed = !state.ui.filterCollapsed
       renderFilterPanelState()
@@ -5642,6 +6365,10 @@
   dom.fileClass.addEventListener("change", (event) => onFileChange("class", event))
   dom.startAnalysisBtn.addEventListener("click", onStartAnalysis)
   dom.exportCsvBtn.addEventListener("click", exportPreprocessedCsv)
+  dom.toggleSidebarBtn?.addEventListener("click", () => {
+    state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed
+    renderSidebarState()
+  })
   dom.backToImportBtn.addEventListener("click", () => {
     resetAnalysisSession({ clearUpload: true })
     switchScreen("import")
