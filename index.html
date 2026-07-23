@@ -28,7 +28,7 @@
                 <div class="section-kicker">数据导入</div>
                 <h2>导入班级明细，开始经营分析</h2>
                 <p class="hero-copy">
-                  自动识别编码与分隔符，并校验核心字段。当前所有营期、大组、小组、班长分析，均基于班级明细统一聚合。
+                  自动识别编码与分隔符，并校验核心字段。班级明细用于经营分析，可选补充限制表分析封号对业绩的影响。
                 </p>
                 <div class="import-hero-meta">
                   <span>本地运行</span>
@@ -38,7 +38,7 @@
               </div>
               <div class="import-hero-side">
                 <div class="import-side-badge">导入要求</div>
-                <div class="import-side-title">仅需一份班级明细 CSV</div>
+                <div class="import-side-title">一份必选明细，可选补充限制表</div>
                 <div class="import-side-points">
                   <div class="import-side-point">推荐使用最新导出的明细文件</div>
                   <div class="import-side-point">系统会自动校验字段完整性</div>
@@ -71,10 +71,30 @@
                 </div>
               </div>
 
+              <div class="panel upload-card import-upload-card">
+                <div class="card-head">
+                  <div>
+                    <div class="section-kicker">步骤 2 / 可选文件</div>
+                    <h3>上传班级限制表</h3>
+                  </div>
+                  <span id="limitStatusTag" class="status-chip neutral">未导入</span>
+                </div>
+                <div class="import-upload-copy">用于识别封号日，并关联分析封号前后By-day经营变化。</div>
+                <input id="fileLimit" type="file" accept=".csv" />
+                <div id="limitFileInfo" class="file-info">需要包含：营期、班级、day8前限制数，以及day负2～day7限制数字段；建议包含项目。</div>
+                <div class="import-field-pills">
+                  <span class="import-field-pill">项目（建议）</span>
+                  <span class="import-field-pill">营期</span>
+                  <span class="import-field-pill">班级</span>
+                  <span class="import-field-pill">day8前限制数</span>
+                  <span class="import-field-pill">day负2～day7限制数</span>
+                </div>
+              </div>
+
               <div class="panel import-check-panel">
                 <div class="card-head">
                   <div>
-                    <div class="section-kicker">步骤 2 / 校验反馈</div>
+                    <div class="section-kicker">步骤 3 / 校验反馈</div>
                     <h3>导入检查</h3>
                   </div>
                   <span id="importSummaryTag" class="status-chip neutral">等待文件</span>
@@ -158,8 +178,9 @@
             <button class="tab" data-tab="group" type="button"><span class="tab-index">04</span><span>大组分析</span></button>
             <button class="tab" data-tab="small-group" type="button"><span class="tab-index">05</span><span>小组分析</span></button>
             <button class="tab" data-tab="class" type="button"><span class="tab-index">06</span><span>班长分析</span></button>
+            <button class="tab" data-tab="ban-impact" type="button"><span class="tab-index">07</span><span>封号影响</span></button>
             <div class="nav-group-label">数据管理</div>
-            <button class="tab" data-tab="quality" type="button"><span class="tab-index">07</span><span>数据健康</span></button>
+            <button class="tab" data-tab="quality" type="button"><span class="tab-index">08</span><span>数据健康</span></button>
             <div class="nav-footnote">保留全层级指标<br />支持从经营结果逐层穿透</div>
           </nav>
 
@@ -286,6 +307,11 @@
                 <div>
                   <div class="section-kicker">核心概览</div>
                   <h3>核心指标概览</h3>
+                </div>
+                <div class="toolbar-group camp-overview-actions">
+                  <button id="campOverviewExportCsvBtn" class="btn ghost" type="button">导出 CSV</button>
+                  <button id="campOverviewExportPngBtn" class="btn ghost" type="button">导出 PNG</button>
+                  <button id="campInsightOpenBtn" class="btn primary insight-entry-btn" type="button">查看周期洞察</button>
                 </div>
               </div>
               <div class="panel-subtitle">默认展示项目整体，可在表格内逐层展开查看大组、小组与班长。</div>
@@ -890,6 +916,46 @@
             </div>
           </section>
 
+          <section class="tab-panel" data-panel="ban-impact">
+            <div id="banImpactEmpty" class="panel ban-empty-state"></div>
+            <div id="banImpactContent" class="ban-impact-content hidden">
+              <div class="panel">
+                <div class="card-head">
+                  <div><div class="section-kicker">限制影响总览</div><h3>封号对班级业绩的影响</h3><div id="banCoverageHint" class="panel-subtitle"></div></div>
+                  <button id="banInsightCopyBtn" class="btn primary" type="button">复制封号洞察</button>
+                </div>
+                <div id="banImpactMetrics" class="metrics-grid"></div>
+                <div id="banInsightText" class="ban-insight-text"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head"><div><div class="section-kicker">事件时间</div><h3>选择封号日</h3><div class="panel-subtitle">选择具体封号日后，下方所有图表和明细同步切换。</div></div><div id="banDaySwitch" class="quick-switch compact"></div></div>
+                <div id="banDayDistribution" class="chart"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head"><div><div class="section-kicker">By-day影响</div><h3>封号前后转化与待支付变化</h3><div id="banCompareHint" class="panel-subtitle"></div></div></div>
+                <div class="chart-grid two-col">
+                  <div class="chart-card"><div class="chart-card-title">Day3-Day7 转率对比</div><div id="banConversionTrend" class="chart tall"></div></div>
+                  <div class="chart-card"><div class="chart-card-title">与未封号班级的转率差值</div><div id="banConversionGap" class="chart tall"></div></div>
+                  <div class="chart-card"><div class="chart-card-title">Day3-Day7 待支付率对比</div><div id="banPendingTrend" class="chart tall"></div></div>
+                  <div class="chart-card"><div class="chart-card-title">与未封号班级的待支付率差值</div><div id="banPendingGap" class="chart tall"></div></div>
+                </div>
+                <div id="banPostImpact" class="ban-post-impact"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head"><div><div class="section-kicker">过程解释</div><h3>到播、留存与班长承接</h3></div></div>
+                <div id="banProcessCharts" class="chart-grid three-col"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head"><div><div class="section-kicker">组织定位</div><h3>小组影响排名</h3></div></div>
+                <div id="banGroupTable" class="table-wrap"></div>
+              </div>
+              <div class="panel">
+                <div class="card-head"><div><div class="section-kicker">明细下钻</div><h3>班级限制明细</h3></div></div>
+                <div id="banDetailTable" class="table-wrap"></div>
+              </div>
+            </div>
+          </section>
+
           <section class="tab-panel" data-panel="quality">
             <div class="metrics-grid" id="qualityMetrics"></div>
             <div class="two-col">
@@ -934,6 +1000,21 @@
         <div class="modal-body">
           <div id="chartModalPlot" class="modal-chart"></div>
         </div>
+      </div>
+    </div>
+    <div id="campInsightModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="campInsightTitle">
+      <div class="modal-card insight-modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="section-kicker">策略运营速览</div>
+            <div id="campInsightTitle" class="modal-title">周期经营洞察</div>
+          </div>
+          <div class="insight-modal-actions">
+            <button id="campInsightCopyBtn" class="btn primary" type="button">一键复制</button>
+            <button id="campInsightCloseBtn" class="btn ghost modal-close" type="button">关闭</button>
+          </div>
+        </div>
+        <div id="campInsightBody" class="modal-body insight-modal-body"></div>
       </div>
     </div>
 

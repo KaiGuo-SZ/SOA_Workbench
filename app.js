@@ -10,6 +10,7 @@
   const PLOT_ROI = "#f59e0b"
   const plotConfig = { responsive: true, displayModeBar: false }
   const modalPlotConfig = { responsive: true, displayModeBar: true, scrollZoom: true }
+  let visiblePlotResizeTimer = null
 
   const PROCESS_SPECS = [
     { key: "attend", title: "到播（day1到播-day5到播）", dayStart: 1, dayEnd: 5, field: (d) => `day${d}到播`, tickformat: ".1%" },
@@ -39,8 +40,11 @@
     importView: document.getElementById("importView"),
     dashboardView: document.getElementById("dashboardView"),
     fileClass: document.getElementById("fileClass"),
+    fileLimit: document.getElementById("fileLimit"),
     classStatusTag: document.getElementById("classStatusTag"),
     classFileInfo: document.getElementById("classFileInfo"),
+    limitStatusTag: document.getElementById("limitStatusTag"),
+    limitFileInfo: document.getElementById("limitFileInfo"),
     importSummaryTag: document.getElementById("importSummaryTag"),
     importChecks: document.getElementById("importChecks"),
     importErrors: document.getElementById("importErrors"),
@@ -89,6 +93,14 @@
     filterPanel: document.querySelector(".filter-panel"),
     campViewDimensionSwitch: document.getElementById("campViewDimensionSwitch"),
     campOverviewTable: document.getElementById("campOverviewTable"),
+    campOverviewExportCsvBtn: document.getElementById("campOverviewExportCsvBtn"),
+    campOverviewExportPngBtn: document.getElementById("campOverviewExportPngBtn"),
+    campInsightOpenBtn: document.getElementById("campInsightOpenBtn"),
+    campInsightModal: document.getElementById("campInsightModal"),
+    campInsightTitle: document.getElementById("campInsightTitle"),
+    campInsightBody: document.getElementById("campInsightBody"),
+    campInsightCopyBtn: document.getElementById("campInsightCopyBtn"),
+    campInsightCloseBtn: document.getElementById("campInsightCloseBtn"),
     monthDrillPanel: document.getElementById("monthDrillPanel"),
     monthDrillTitle: document.getElementById("monthDrillTitle"),
     monthDrillPath: document.getElementById("monthDrillPath"),
@@ -197,6 +209,23 @@
     classFormatDecayCharts: document.getElementById("classFormatDecayCharts"),
     classTable: document.getElementById("classTable"),
     classTableSearchInput: document.getElementById("classTableSearchInput"),
+    banImpactEmpty: document.getElementById("banImpactEmpty"),
+    banImpactContent: document.getElementById("banImpactContent"),
+    banCoverageHint: document.getElementById("banCoverageHint"),
+    banInsightCopyBtn: document.getElementById("banInsightCopyBtn"),
+    banImpactMetrics: document.getElementById("banImpactMetrics"),
+    banInsightText: document.getElementById("banInsightText"),
+    banDaySwitch: document.getElementById("banDaySwitch"),
+    banDayDistribution: document.getElementById("banDayDistribution"),
+    banCompareHint: document.getElementById("banCompareHint"),
+    banConversionTrend: document.getElementById("banConversionTrend"),
+    banConversionGap: document.getElementById("banConversionGap"),
+    banPendingTrend: document.getElementById("banPendingTrend"),
+    banPendingGap: document.getElementById("banPendingGap"),
+    banPostImpact: document.getElementById("banPostImpact"),
+    banProcessCharts: document.getElementById("banProcessCharts"),
+    banGroupTable: document.getElementById("banGroupTable"),
+    banDetailTable: document.getElementById("banDetailTable"),
     chartModal: document.getElementById("chartModal"),
     chartModalTitle: document.getElementById("chartModalTitle"),
     chartModalPlot: document.getElementById("chartModalPlot"),
@@ -204,7 +233,7 @@
   }
 
   const state = {
-    uploads: { class: null },
+    uploads: { class: null, limit: null },
     model: null,
     filters: {
       asOfDate: toDateOnly(new Date()),
@@ -244,6 +273,9 @@
       campRhythmDimension: "camp",
       campByDayDimension: "camp",
       campViewDimension: "camp",
+      campInsightText: "",
+      banDay: "全部",
+      banInsightCopyText: "",
       projectCompareOverviewExpanded: [],
       projectCompareWarmOverviewExpanded: [],
       campOverviewExpanded: [],
@@ -268,6 +300,7 @@
       classTierCompareCollapsed: true,
       classTypeCompareCollapsed: true,
       classFormatCompareCollapsed: true,
+      classTierCompareExpanded: [],
       classTypeCompareExpanded: [],
       classTableSearch: "",
       classTableSort: "roiDesc",
@@ -444,7 +477,7 @@
   function buildLeaderOrgLookup(rows, meta) {
     const lookup = new Map()
     rows.forEach((row, rowIndex) => {
-      const leaderName = String(row?.[meta.classField] || "").trim()
+      const leaderName = String(row?.[meta.leaderField] || row?.[meta.classField] || "").trim()
       if (!leaderName) return
       const projectName = normalizeProjectName(row?.[meta.projectField])
       const record = {
@@ -729,6 +762,10 @@
     text = text.replace(/尾量/g, "")
     text = text.replace(/\*.*/, "")
     return text.trim()
+  }
+
+  function normalizeBanClassKey(value) {
+    return String(value || "").replace(/\s+/g, " ").trim()
   }
 
   function firstNonEmpty(rows, candidates) {
@@ -1395,12 +1432,13 @@
     refs.expandView?.classList.toggle("hidden", mode !== "expand")
   }
 
-  function buildValidation(parsed) {
-    const required = ["营期", "开营时间", "月份", "大组", "小组", "班级"]
+  function buildValidation(parsed, type = "class") {
+    const required = type === "limit" ? ["营期", "班级"] : ["营期", "开营时间", "月份", "大组", "小组", "班级"]
     const missing = required.filter((field) => !parsed.fields.includes(field))
+    const hasLimitMetric = type !== "limit" || parsed.fields.includes("day8前限制数") || parsed.fields.some((field) => /^day(?:负[12]|[0-7])限制数$/.test(field))
     return {
-      ok: missing.length === 0,
-      missing,
+      ok: missing.length === 0 && hasLimitMetric,
+      missing: hasLimitMetric ? missing : [...missing, "限制数字段"],
       rows: parsed.rows.length,
       encoding: parsed.encoding,
       delimiter: parsed.delimiter === "\t" ? "TAB" : parsed.delimiter
@@ -1416,7 +1454,7 @@
     }
     try {
       const parsed = await parseCsvFile(file)
-      state.uploads[type] = { fileName: file.name, parsed, validation: buildValidation(parsed) }
+      state.uploads[type] = { fileName: file.name, parsed, validation: buildValidation(parsed, type) }
     } catch (error) {
       state.uploads[type] = {
         fileName: file.name,
@@ -1434,6 +1472,7 @@
 
   function renderImportState() {
     const klass = state.uploads.class
+    const limit = state.uploads.limit
     const delimiterText = klass?.validation?.delimiter === "\t"
       ? "Tab"
       : (klass?.validation?.delimiter || "待识别")
@@ -1447,6 +1486,17 @@
     } else {
       setChip(dom.classStatusTag, "neutral", "未导入")
       dom.classFileInfo.textContent = "需要包含：营期、开营时间、月份、大组、小组、班级，以及班级级过程/转化/成本字段。"
+    }
+
+    if (limit?.validation?.ok) {
+      setChip(dom.limitStatusTag, "good", "已通过")
+      dom.limitFileInfo.textContent = `${limit.fileName}｜${limit.validation.rows} 行｜${limit.validation.encoding}｜${limit.validation.delimiter || "已识别"}`
+    } else if (limit?.validation) {
+      setChip(dom.limitStatusTag, "bad", "需修复")
+      dom.limitFileInfo.textContent = limit.validation.error || `缺失字段：${limit.validation.missing.join("、") || "未知"}`
+    } else {
+      setChip(dom.limitStatusTag, "neutral", "未导入")
+      dom.limitFileInfo.textContent = "需要包含：营期、班级、day8前限制数，以及day负2～day7限制数字段；建议包含项目。"
     }
 
     const checks = []
@@ -1494,6 +1544,14 @@
       if (klass.validation.missing?.length) errors.push(`班级文件缺失字段：${klass.validation.missing.join("、")}`)
       if (klass.validation.error) errors.push(`班级文件读取失败：${klass.validation.error}`)
     }
+    checks.push({
+      label: "班级限制表（可选）",
+      value: !limit ? "未上传" : limit.validation?.ok ? `${limit.validation.rows} 行` : "未通过",
+      statusText: !limit ? "不影响基础分析" : limit.validation?.ok ? "封号分析已启用" : "需修复",
+      desc: !limit ? "上传后解锁封号影响Tab。" : limit.validation?.ok ? "将按项目、营期、班级匹配经营数据。" : `缺失字段：${limit.validation?.missing?.join("、") || "未知"}`,
+      kind: !limit ? "neutral" : limit.validation?.ok ? "good" : "bad"
+    })
+    if (limit?.validation?.missing?.length) errors.push(`限制表缺失字段：${limit.validation.missing.join("、")}`)
     dom.importChecks.innerHTML = checks.map((item) => `
       <div class="check-item import-check-item">
         <div class="import-check-main">
@@ -1513,6 +1571,35 @@
     dom.startAnalysisBtn.disabled = !ready
   }
 
+  const BAN_DAY_KEYS = ["day负2", "day负1", "day0", "day1", "day2", "day3", "day4", "day5", "day6", "day7"]
+
+  function prepareLimitLookup(upload) {
+    if (!upload?.validation?.ok || !upload.parsed?.rows) return null
+    const fields = upload.parsed.fields
+    const projectField = pickField(fields, ["项目", "项目名称", "业务线", "项目组"])
+    const campField = pickField(fields, ["营期", "营期号", "营期ID", "期数"])
+    const classField = pickField(fields, ["班级", "班级名称"])
+    const exact = new Map()
+    const fallbackBuckets = new Map()
+    upload.parsed.rows.forEach((row) => {
+      const project = normalizeProjectName(projectField ? row[projectField] : null)
+      const camp = String(row[campField] || "").trim()
+      const className = normalizeBanClassKey(row[classField])
+      if (!camp || !className) return
+      const dayCounts = Object.fromEntries(BAN_DAY_KEYS.map((day) => [day, parseNumber(row[`${day}限制数`]) || 0]))
+      const firstDay = BAN_DAY_KEYS.find((day) => dayCounts[day] > 0) || "未知"
+      const totalBeforeDay8 = parseNumber(row["day8前限制数"])
+      const limited = (Number.isFinite(totalBeforeDay8) ? totalBeforeDay8 : sum(Object.values(dayCounts))) > 0
+      const prepared = { project, camp, className, dayCounts, firstDay, limited, total: Number.isFinite(totalBeforeDay8) ? totalBeforeDay8 : sum(Object.values(dayCounts)) }
+      exact.set(`${project}__${camp}__${className}`, prepared)
+      const fallbackKey = `${camp}__${className}`
+      if (!fallbackBuckets.has(fallbackKey)) fallbackBuckets.set(fallbackKey, [])
+      fallbackBuckets.get(fallbackKey).push(prepared)
+    })
+    const fallback = new Map(Array.from(fallbackBuckets.entries()).filter(([, items]) => items.length === 1).map(([key, items]) => [key, items[0]]))
+    return { exact, fallback, rows: upload.parsed.rows.length }
+  }
+
   function buildModel() {
     const classRows = state.uploads.class.parsed.rows
     const classFields = state.uploads.class.parsed.fields
@@ -1524,8 +1611,8 @@
     const groupField = pickField(classFields, ["大组", "组别", "部门", "分组"])
     const smallGroupField = pickField(classFields, ["小组"])
     const leaderField = pickField(classFields, ["班长", "班主任", "班主任姓名", "班级负责人"])
-    const classNameField = pickField(classFields, ["班级", "班级名称", "班长"])
-    const classField = pickField(classFields, ["班级", "班级名称", "班长"])
+    const classNameField = pickField(classFields, ["班级", "班级名称"])
+    const classField = pickField(classFields, ["班级", "班级名称"])
     if (!campField || !startField || !monthFieldClass || !groupField || !smallGroupField || !classField) {
       throw new Error("核心字段识别失败，请确认上传的是班级数据明细。")
     }
@@ -1539,12 +1626,14 @@
       const cleanedLeader = cleanClassName(leaderField ? row[leaderField] : row[classField])
       const rawClassDisplay = String(classNameField ? row[classNameField] : row[classField] || "").trim()
       const cleanedClass = cleanClassName(classNameField ? row[classNameField] : row[classField])
+      const banClassKey = normalizeBanClassKey(rawClassDisplay)
       return {
         ...row,
         [classField]: cleanClassName(row[classField]),
         ...(leaderField ? { [leaderField]: cleanedLeader } : {}),
         ...(classNameField ? { [classNameField]: cleanedClass } : {}),
         _原始班级: rawClassDisplay,
+        _封号匹配班级: banClassKey,
         [groupField]: backfilledGroupName,
         [projectField]: normalizeProjectName(sourceProjectField ? row[sourceProjectField] : null)
       }
@@ -1555,10 +1644,11 @@
       projectField,
       groupField,
       smallGroupField,
+      leaderField,
       classField
     })
     const alignedClassRows = normalizedClassRows.map((row) => {
-      const leaderName = String(row[classField] || "").trim()
+      const leaderName = String(leaderField ? row[leaderField] : row[classField] || "").trim()
       const projectName = normalizeProjectName(row[projectField])
       const leaderOrg = leaderName ? leaderOrgLookup.get(`${projectName}__${leaderName}`) : null
       const nextRow = {
@@ -1597,7 +1687,24 @@
       }
     })
 
-    const unifiedRows = enrichedClassRows
+    const limitLookup = prepareLimitLookup(state.uploads.limit)
+    let limitMatched = 0
+    const unifiedRows = enrichedClassRows.map((row) => {
+      if (!limitLookup) return { ...row, _封号情况: "未提供限制表", _首次封号日: "未知", _限制匹配: false }
+      const project = normalizeProjectName(row[projectField])
+      const camp = String(row[campField] || "").trim()
+      const className = normalizeBanClassKey(row._封号匹配班级 || row._原始班级 || row[classNameField] || row[classField])
+      const matched = limitLookup.exact.get(`${project}__${camp}__${className}`) || limitLookup.fallback.get(`${camp}__${className}`)
+      if (matched) limitMatched += 1
+      return {
+        ...row,
+        _封号情况: matched ? (matched.limited ? "封号" : "未封号") : "未知",
+        _首次封号日: matched?.firstDay || "未知",
+        _限制数: matched?.total || 0,
+        _限制匹配: !!matched,
+        ...Object.fromEntries(BAN_DAY_KEYS.map((day) => [`_${day}限制数`, matched?.dayCounts?.[day] || 0]))
+      }
+    })
     const { campSnapshots, groupSnapshots, smallGroupSnapshots, classSnapshots } = buildSnapshotsFromRows(unifiedRows, {
       campField, startField, monthFieldClass, groupField, smallGroupField, classField
     })
@@ -1617,6 +1724,7 @@
       quality,
       anomalies,
       recommendations,
+      limitMeta: limitLookup ? { supplied: true, sourceRows: limitLookup.rows, matchedRows: limitMatched, coverageRate: ratio(limitMatched, enrichedClassRows.length) } : { supplied: false, sourceRows: 0, matchedRows: 0, coverageRate: 0 },
       meta: {
         campField,
         startField,
@@ -1872,7 +1980,10 @@
 
   function resetAnalysisSession({ clearUpload = false } = {}) {
     state.model = null
-    if (clearUpload) state.uploads.class = null
+    if (clearUpload) {
+      state.uploads.class = null
+      state.uploads.limit = null
+    }
     state.filters = createEmptyFilters()
     state.draftFilters = cloneFilters(state.filters)
     Object.assign(state.ui, {
@@ -1914,13 +2025,17 @@
       classTierCompareCollapsed: true,
       classTypeCompareCollapsed: true,
       classFormatCompareCollapsed: true,
+      classTierCompareExpanded: [],
       classTypeCompareExpanded: [],
       classTableSearch: "",
       classTableSort: "roiDesc",
       classTierDimension: "project",
-      campBroadcasts: {}
+      campBroadcasts: {},
+      banDay: "全部",
+      banInsightCopyText: ""
     })
     if (dom.fileClass) dom.fileClass.value = ""
+    if (dom.fileLimit) dom.fileLimit.value = ""
     if (dom.summaryText) dom.summaryText.textContent = ""
     if (dom.importErrors) dom.importErrors.innerHTML = ""
     document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === "overview"))
@@ -2245,6 +2360,7 @@
     else if (state.ui.activeTab === "group") renderGroupSection(groups, classes)
     else if (state.ui.activeTab === "small-group") renderSmallGroupSection(smallGroups, classes)
     else if (state.ui.activeTab === "class") renderClassSection(classes)
+    else if (state.ui.activeTab === "ban-impact") renderBanImpactSection(scopedRows)
     else if (state.ui.activeTab === "quality") renderQuality(scopedRows, camps, groups, smallGroups, classes)
   }
 
@@ -2287,16 +2403,22 @@
   }
 
   function resizeVisiblePlots() {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.querySelectorAll(".tab-panel.active .chart .js-plotly-plot, .tab-panel.active .chart").forEach((el) => {
-          const plotEl = el.classList?.contains("js-plotly-plot") ? el : el.querySelector(".js-plotly-plot")
-          if (!plotEl) return
-          try {
-            Plotly.Plots.resize(plotEl)
-          } catch {}
-        })
+    if (visiblePlotResizeTimer) clearTimeout(visiblePlotResizeTimer)
+    const resizeOnce = () => {
+      document.querySelectorAll(".tab-panel.active .chart .js-plotly-plot, .tab-panel.active .chart, .chart-modal:not(.hidden) .chart").forEach((el) => {
+        const host = el.classList?.contains("chart") ? el : el.closest(".chart")
+        const plotEl = el.classList?.contains("js-plotly-plot") ? el : el.querySelector(".js-plotly-plot")
+        if (!plotEl || !host) return
+        const box = host.getBoundingClientRect()
+        if (box.width < 80 || box.height < 80) return
+        try {
+          Plotly.Plots.resize(plotEl)
+        } catch {}
       })
+    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resizeOnce)
+      visiblePlotResizeTimer = setTimeout(resizeOnce, 180)
     })
   }
 
@@ -2987,6 +3109,197 @@ ${anomalyLines}
     })
   }
 
+  function insightEscape(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]))
+  }
+
+  function insightPeriodBuckets(rows, dimension) {
+    const meta = currentMeta()
+    return Array.from(groupBy(rows, (row) => campViewBucketFromRow(row, meta, dimension).key).entries())
+      .map(([key, bucket]) => ({ key, rows: bucket, info: campViewBucketFromRow(bucket[0], meta, dimension) }))
+      .sort((a, b) => compareOverviewBucket(a.info, b.info))
+  }
+
+  function insightMetricData(rows, dimension, label) {
+    const info = buildCampNodeMetricData(rows, dimension, "dimension", label, {})
+    return {
+      roi: info.snapshot.metrics.roi,
+      addCost: info.snapshot.metrics.addCost,
+      addRevenue: info.snapshot.metrics.addRevenue,
+      output: info.avgOutputPerLeader,
+      convRate: info.snapshot.metrics.convRate,
+      pendingRate: info.snapshot.metrics.pendingRate,
+      pendingConv: info.snapshot.metrics.pendingConv,
+      individualShare: info.snapshot.metrics.individualShare,
+      aov: info.snapshot.metrics.aov,
+      personEfficiency: info.snapshot.metrics.personEfficiency,
+      highImmerseRate: info.highImmerseRate,
+      highImmerseConv: info.highImmerseConvRate,
+      cost: info.snapshot.metrics.cost,
+      revenue: info.snapshot.metrics.revenue,
+      adds: info.snapshot.metrics.adds
+    }
+  }
+
+  function insightDelta(current, previous) {
+    return Number.isFinite(current) && Number.isFinite(previous) ? current - previous : null
+  }
+
+  function insightMetricStatus(delta, format = "rate") {
+    if (!Number.isFinite(delta)) return "数据不足"
+    const threshold = format === "roi" ? 0.01 : format === "money" ? 0.05 : 0.005
+    if (Math.abs(delta) < threshold) return "基本持平"
+    return delta > 0 ? "改善" : "下降"
+  }
+
+  function insightCompareRows(current, previous) {
+    return [
+      { key: "roi", label: "ROI", formatter: (v) => formatNum(v, 2), deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${formatNum(v, 2)}`, format: "roi", better: "high" },
+      { key: "addCost", label: "添加成本", formatter: formatMoney, deltaFormatter: (v, p) => Number.isFinite(p) && p ? `${v >= 0 ? "+" : ""}${formatPct(v / p)}` : "-", format: "money", better: "low" },
+      { key: "addRevenue", label: "添加产值", formatter: formatMoney, deltaFormatter: (v, p) => Number.isFinite(p) && p ? `${v >= 0 ? "+" : ""}${formatPct(v / p)}` : "-", format: "money", better: "high" },
+      { key: "output", label: "人均产能", formatter: formatMoney, deltaFormatter: (v, p) => Number.isFinite(p) && p ? `${v >= 0 ? "+" : ""}${formatPct(v / p)}` : "-", format: "money", better: "high" },
+      { key: "convRate", label: "转率", formatter: formatPct, deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}pp`, better: "high" },
+      { key: "pendingRate", label: "待支付率", formatter: formatPct, deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}pp`, better: "high" },
+      { key: "pendingConv", label: "待支付转率", formatter: formatPct, deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}pp`, better: "high" },
+      { key: "highImmerseRate", label: "高沉浸率", formatter: formatPct, deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}pp`, better: "high" },
+      { key: "highImmerseConv", label: "高沉浸转率", formatter: formatPct, deltaFormatter: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}pp`, better: "high" }
+    ].map((spec) => {
+      const delta = insightDelta(current[spec.key], previous[spec.key])
+      const directionDelta = spec.better === "low" && Number.isFinite(delta) ? -delta : delta
+      return { ...spec, current: current[spec.key], previous: previous[spec.key], delta, status: insightMetricStatus(directionDelta, spec.format) }
+    })
+  }
+
+  function insightEntityImpacts(currentRows, previousRows, field, fallback) {
+    const currentTotalRevenue = sum(currentRows.map(rowRevenue))
+    const currentTotalCost = sum(currentRows.map(rowCost))
+    const overallRoi = ratio(currentTotalRevenue, currentTotalCost)
+    const previousMap = new Map(Array.from(groupBy(previousRows, (row) => String(row[field] || fallback).trim() || fallback).entries()).map(([name, rows]) => [name, ratio(sum(rows.map(rowRevenue)), sum(rows.map(rowCost)))]))
+    return Array.from(groupBy(currentRows, (row) => String(row[field] || fallback).trim() || fallback).entries()).map(([name, rows]) => {
+      const revenue = sum(rows.map(rowRevenue))
+      const cost = sum(rows.map(rowCost))
+      const adds = sum(rows.map(rowAdds))
+      const roi = ratio(revenue, cost)
+      const withoutRoi = ratio(currentTotalRevenue - revenue, currentTotalCost - cost)
+      return {
+        name, roi, adds, cost,
+        previousRoi: previousMap.get(name),
+        roiDelta: insightDelta(roi, previousMap.get(name)),
+        liftWithout: insightDelta(withoutRoi, overallRoi),
+        costShare: ratio(cost, currentTotalCost)
+      }
+    }).filter((item) => Number.isFinite(item.roi))
+  }
+
+  function buildCampInsight(rows, dimension) {
+    const buckets = insightPeriodBuckets(rows, dimension)
+    if (buckets.length < 2) return { html: `<div class="insight-empty">当前筛选范围至少需要两个可比周期，才能生成周期洞察。</div>`, text: "当前筛选范围至少需要两个可比周期，才能生成周期洞察。", title: "周期经营洞察" }
+    const currentBucket = buckets[buckets.length - 1]
+    const baselineBuckets = dimension === "camp" ? buckets.slice(Math.max(0, buckets.length - 6), -1) : [buckets[buckets.length - 2]]
+    const previousRows = baselineBuckets.flatMap((item) => item.rows)
+    const current = insightMetricData(currentBucket.rows, dimension, currentBucket.info.label)
+    const previous = insightMetricData(previousRows, dimension, baselineBuckets.map((item) => item.info.label).join("、"))
+    const comparisons = insightCompareRows(current, previous)
+    const baselineLabel = dimension === "camp" ? `历史${baselineBuckets.length}期基准` : baselineBuckets[0].info.label
+    const roiDelta = insightDelta(current.roi, previous.roi)
+    const roiTrend = !Number.isFinite(roiDelta) ? "暂无完整对比" : Math.abs(roiDelta) < 0.01 ? "基本持平" : roiDelta > 0 ? "有所改善" : "明显下降"
+    const goalText = Number.isFinite(current.roi) ? (current.roi >= ROI_TARGET ? "已达到0.8目标" : "未达到0.8目标") : "ROI数据不足"
+    const outputText = Number.isFinite(current.output) ? (current.output >= 60000 ? "人均产能已达到6万元目标" : "人均产能低于6万元目标") : "人均产能数据不足"
+    const factorRows = comparisons.filter((item) => ["addCost", "addRevenue", "convRate", "pendingRate", "pendingConv", "highImmerseRate", "highImmerseConv"].includes(item.key) && Number.isFinite(item.delta))
+      .map((item) => ({ ...item, score: Math.abs(item.delta / Math.max(Math.abs(item.previous), item.format === "roi" ? 0.01 : 0.005)), adverse: item.better === "low" ? item.delta > 0 : item.delta < 0 }))
+      .filter((item) => item.adverse).sort((a, b) => b.score - a.score).slice(0, 3)
+    const factorText = factorRows.length ? factorRows.map((item) => `${item.label}${item.deltaFormatter(item.delta, item.previous)}`).join("、") : "关键指标未出现明显负向变化"
+    const meta = currentMeta()
+    const smallGroups = insightEntityImpacts(currentBucket.rows, previousRows, meta.smallGroupField, "未知小组")
+      .filter((item) => (item.costShare || 0) >= 0.03).sort((a, b) => (b.liftWithout || -Infinity) - (a.liftWithout || -Infinity))
+    const leaders = insightEntityImpacts(currentBucket.rows, previousRows, meta.leaderField || meta.classField, "未知班长")
+      .filter((item) => item.adds >= 10 && (item.costShare || 0) >= 0.005).sort((a, b) => (b.liftWithout || -Infinity) - (a.liftWithout || -Infinity))
+    const dragGroups = smallGroups.filter((item) => (item.liftWithout || 0) > 0.005).slice(0, 3)
+    const weakLeaders = leaders.filter((item) => (item.liftWithout || 0) > 0.002).slice(0, 3)
+    const bestGroup = smallGroups.filter((item) => Number.isFinite(item.roiDelta)).sort((a, b) => b.roiDelta - a.roiDelta)[0]
+    const orgLine = dragGroups[0]
+      ? `${dragGroups[0].name}是当前最主要的组织拖累，剔除模拟后整体ROI约提升${formatNum(dragGroups[0].liftWithout, 2)}。`
+      : "未发现对整体ROI形成明显拖累的高体量小组。"
+    const actionLines = []
+    if (factorRows[0]) actionLines.push(`优先复盘${factorRows[0].label}的环比变化及对应运营动作。`)
+    if (dragGroups[0]) actionLines.push(`下钻${dragGroups[0].name}，核查其成本、转率和支付收回环节。`)
+    if (weakLeaders[0]) actionLines.push(`重点跟进${weakLeaders.slice(0, 2).map((item) => item.name).join("、")}等高体量低表现班长。`)
+    if (actionLines.length < 3 && bestGroup) actionLines.push(`复盘${bestGroup.name}的改善动作，判断是否可向其他小组复制。`)
+    while (actionLines.length < 3) actionLines.push("继续观察下一周期关键指标，确认变化是否持续。")
+    const title = `${currentBucket.info.label}经营洞察`
+    const groupItems = dragGroups.length ? dragGroups.map((item) => `<li><strong>${insightEscape(item.name)}</strong><span>ROI ${formatNum(item.roi, 2)}，较基准${Number.isFinite(item.roiDelta) ? `${item.roiDelta >= 0 ? "+" : ""}${formatNum(item.roiDelta, 2)}` : "无可比数据"}；剔除模拟影响 ${formatNum(item.liftWithout, 2)}</span></li>`).join("") : `<li><strong>暂无明显拖累小组</strong><span>高体量小组整体处于正常波动范围。</span></li>`
+    const leaderItems = weakLeaders.length ? weakLeaders.map((item) => `<li><strong>${insightEscape(item.name)}</strong><span>ROI ${formatNum(item.roi, 2)}，添加人数 ${formatNum(item.adds, 0)}；剔除模拟影响 ${formatNum(item.liftWithout, 2)}</span></li>`).join("") : `<li><strong>暂无高体量极低班长</strong><span>已排除添加人数不足10人的小样本。</span></li>`
+    const tableRows = comparisons.map((item) => `<tr><td>${item.label}</td><td>${item.formatter(item.current)}</td><td>${item.formatter(item.previous)}</td><td class="${item.status === "下降" ? "td-bad" : item.status === "改善" ? "td-good" : ""}">${Number.isFinite(item.delta) ? item.deltaFormatter(item.delta, item.previous) : "-"}</td><td>${item.status}</td></tr>`).join("")
+    const summary = `${currentBucket.info.label} ROI为${formatNum(current.roi, 2)}，较${baselineLabel}${Number.isFinite(roiDelta) ? `${roiDelta >= 0 ? "提升" : "下降"}${formatNum(Math.abs(roiDelta), 2)}` : "暂无可比结果"}，${roiTrend}且${goalText}；${outputText}。`
+    const html = `
+      <section class="insight-hero"><span class="metric-pill ${current.roi >= ROI_TARGET ? "td-good" : "td-bad"}">${goalText}</span><h3>${insightEscape(summary)}</h3><p>对比口径：${insightEscape(currentBucket.info.label)} vs ${insightEscape(baselineLabel)}。${dimension === "camp" ? "营期使用历史最多5期基准。" : "周/月使用筛选后最后两个周期环比。"}</p></section>
+      <section class="insight-section"><h4>ROI影响判断</h4><p>${insightEscape(`主要负向变化：${factorText}。${orgLine}`)}</p><div class="insight-factor-list">${factorRows.length ? factorRows.map((item, index) => `<span><b>${index + 1}</b>${item.label} ${item.deltaFormatter(item.delta, item.previous)}</span>`).join("") : `<span><b>✓</b>暂无明显负向因素</span>`}</div></section>
+      <section class="insight-section"><h4>关键指标对比</h4><div class="table-wrap"><table><thead><tr><th>指标</th><th>本周期</th><th>对比周期</th><th>变化</th><th>判断</th></tr></thead><tbody>${tableRows}</tbody></table></div></section>
+      <div class="insight-two-col"><section class="insight-section"><h4>重点小组</h4><ol class="insight-rank-list">${groupItems}</ol></section><section class="insight-section"><h4>重点班长</h4><ol class="insight-rank-list">${leaderItems}</ol></section></div>
+      <section class="insight-section"><h4>建议动作</h4><ol class="insight-action-list">${actionLines.slice(0, 3).map((item) => `<li>${insightEscape(item)}</li>`).join("")}</ol><p class="insight-note">组织影响采用剔除模拟，用于定位可能拖累项，不代表严格因果关系。</p></section>`
+    const text = `【${title}】\n\n总体判断：\n${summary}\n\nROI影响判断：\n主要负向变化：${factorText}。${orgLine}\n\n关键指标对比：\n${comparisons.map((item) => `- ${item.label}：${item.formatter(item.current)}｜对比${item.formatter(item.previous)}｜${Number.isFinite(item.delta) ? item.deltaFormatter(item.delta, item.previous) : "-"}｜${item.status}`).join("\n")}\n\n重点小组：\n${dragGroups.length ? dragGroups.map((item, i) => `${i + 1}. ${item.name}：ROI ${formatNum(item.roi, 2)}，剔除模拟后整体ROI约提升${formatNum(item.liftWithout, 2)}`).join("\n") : "暂无明显拖累小组"}\n\n重点班长：\n${weakLeaders.length ? weakLeaders.map((item, i) => `${i + 1}. ${item.name}：ROI ${formatNum(item.roi, 2)}，添加人数${formatNum(item.adds, 0)}`).join("\n") : "暂无高体量极低班长"}\n\n建议动作：\n${actionLines.slice(0, 3).map((item, i) => `${i + 1}. ${item}`).join("\n")}`
+    return { html, text, title }
+  }
+
+  function openCampInsight() {
+    if (!dom.campInsightModal || !dom.campInsightBody) return
+    const result = buildCampInsight(getScopedUnifiedRows(null), state.ui.campViewDimension || "camp")
+    state.ui.campInsightText = result.text
+    dom.campInsightTitle.textContent = result.title
+    dom.campInsightBody.innerHTML = result.html
+    dom.campInsightModal.classList.remove("hidden")
+  }
+
+  function closeCampInsight() {
+    dom.campInsightModal?.classList.add("hidden")
+  }
+
+  async function copyCampInsight() {
+    const text = state.ui.campInsightText || ""
+    if (!text) return
+    let copied = false
+    try {
+      await navigator.clipboard.writeText(text)
+      copied = true
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.setAttribute("readonly", "")
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      copied = document.execCommand("copy")
+      textarea.remove()
+    }
+    if (!dom.campInsightCopyBtn) return
+    dom.campInsightCopyBtn.textContent = copied ? "已复制洞察" : "复制失败"
+    setTimeout(() => { dom.campInsightCopyBtn.textContent = "一键复制" }, 1800)
+  }
+
+  async function copyBanInsight() {
+    const text = state.ui.banInsightCopyText || ""
+    if (!text) return
+    let copied = false
+    try {
+      await navigator.clipboard.writeText(text)
+      copied = true
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.setAttribute("readonly", "")
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      copied = document.execCommand("copy")
+      textarea.remove()
+    }
+    if (!dom.banInsightCopyBtn) return
+    dom.banInsightCopyBtn.textContent = copied ? "已复制封号洞察" : "复制失败"
+    setTimeout(() => { dom.banInsightCopyBtn.textContent = "复制封号洞察" }, 1800)
+  }
+
   function renderCampSection(camps, scopedRows) {
     const dimension = state.ui.campViewDimension || "camp"
     renderQuickSwitch(dom.campViewDimensionSwitch, [
@@ -3090,6 +3403,215 @@ ${anomalyLines}
     renderByDayCharts(dom.campProcessCharts, dimensionItems, PROCESS_SPECS, false)
     renderByDayCharts(dom.campConversionCharts, dimensionItems, CONVERSION_SPECS, false)
     renderDecayCharts(dom.campDecayCharts, dimensionItems, DECAY_SPECS, false)
+  }
+
+  function banUniqueRows(rows) {
+    const meta = currentMeta()
+    const seen = new Set()
+    return rows.filter((row, index) => {
+      const classKey = row._封号匹配班级 || row._原始班级 || row._标准班级 || row[meta.classNameField] || row[meta.classField] || index
+      const key = `${row[meta.projectField] || ""}__${row[meta.campField] || ""}__${classKey}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  function banAggregate(rows) {
+    const raw = aggregateUnifiedRows(rows)
+    return {
+      raw,
+      count: banUniqueRows(rows).length,
+      adds: sum(rows.map(rowAdds)),
+      conv: sum(rows.map(rowConv)),
+      cost: sum(rows.map(rowCost)),
+      revenue: sum(rows.map(rowRevenue)),
+      roi: ratio(sum(rows.map(rowRevenue)), sum(rows.map(rowCost))),
+      convRate: ratio(sum(rows.map(rowConv)), sum(rows.map(rowAdds)))
+    }
+  }
+
+  function banDayNumber(day) {
+    if (day === "day负2") return -2
+    if (day === "day负1") return -1
+    const match = String(day || "").match(/day(\d+)/)
+    return match ? Number(match[1]) : null
+  }
+
+  function banMetricValue(aggregate, field) {
+    return normalizeRateLikeValue(firstMetric(aggregate.raw, null, [field]))
+  }
+
+  function banComparisonSeries(cohortAgg, controlAgg, fields) {
+    return fields.map((field) => ({ cohort: banMetricValue(cohortAgg, field), control: banMetricValue(controlAgg, field) }))
+  }
+
+  function banStatusLabel(row) {
+    if (row._封号情况 === "封号") return "限制"
+    if (row._封号情况 === "未封号") return "未限制"
+    return "未知"
+  }
+
+  function banStatusPill(row) {
+    const label = banStatusLabel(row)
+    const cls = label === "限制" ? "danger" : label === "未限制" ? "success" : "neutral"
+    return `<span class="ban-pill ${cls}">${label}</span>`
+  }
+
+  function banDayPill(day) {
+    const text = day || "未知"
+    const order = { day1: "early", day2: "early", day3: "mid", day4: "mid", day5: "mid", day6: "late", day7: "late", day0: "warn", day负1: "warn", day负2: "warn" }
+    return `<span class="ban-pill ${order[text] || "neutral"}">${text}</span>`
+  }
+
+  function banLimitCountCell(value) {
+    const number = parseNumber(value)
+    if (!Number.isFinite(number)) return `<span class="ban-limit-count empty">-</span>`
+    return `<span class="ban-limit-count ${number > 0 ? "active" : "zero"}">${formatNum(number, 0)}</span>`
+  }
+
+  function banClassDisplay(row, meta) {
+    return row._原始班级 || row._标准班级 || row[meta.classNameField] || row[meta.classField] || "未知班级"
+  }
+
+  function banRateHeatCell(value) {
+    const rate = normalizeRateLikeValue(value)
+    if (!Number.isFinite(rate)) return `<span class="ban-rate-heat empty">-</span>`
+    const clamped = Math.max(0, Math.min(1, rate / 0.2))
+    const hue = 8 + clamped * 134
+    const bg = `hsla(${hue}, 72%, 88%, 0.95)`
+    const border = `hsla(${hue}, 64%, 48%, 0.26)`
+    return `<span class="ban-rate-heat" style="background:${bg};border-color:${border};">${formatPct(rate)}</span>`
+  }
+
+  function renderBanImpactSection(scopedRows) {
+    const limitMeta = state.model?.limitMeta
+    const hasData = !!limitMeta?.supplied
+    dom.banImpactEmpty?.classList.toggle("hidden", hasData)
+    dom.banImpactContent?.classList.toggle("hidden", !hasData)
+    if (!hasData) {
+      dom.banImpactEmpty.innerHTML = `<div class="ban-empty-icon">限</div><h3>上传班级限制表后查看封号影响</h3><p>返回导入页补充限制表，即可分析封号时间分布、By-day转化影响、小组与班级明细。</p>`
+      return
+    }
+    const matched = scopedRows.filter((row) => row._限制匹配)
+    const limitedAll = matched.filter((row) => row._封号情况 === "封号")
+    const controls = matched.filter((row) => row._封号情况 === "未封号")
+    const dayOptions = ["全部", ...BAN_DAY_KEYS.filter((day) => limitedAll.some((row) => row._首次封号日 === day))]
+    if (!dayOptions.includes(state.ui.banDay)) state.ui.banDay = "全部"
+    renderQuickSwitch(dom.banDaySwitch, dayOptions.map((day) => ({ label: day === "全部" ? "全部封号" : day.replace("day", "Day"), value: day })), state.ui.banDay, { action: "ban-day" })
+    const cohort = state.ui.banDay === "全部" ? limitedAll : limitedAll.filter((row) => row._首次封号日 === state.ui.banDay)
+    const limitedAgg = banAggregate(cohort)
+    const controlAgg = banAggregate(controls)
+    const allAgg = banAggregate(matched)
+    const roiGap = insightDelta(limitedAgg.roi, controlAgg.roi)
+    const convGap = insightDelta(limitedAgg.convRate, controlAgg.convRate)
+    const expectedConv = Number.isFinite(controlAgg.convRate) ? limitedAgg.adds * controlAgg.convRate : null
+    const lostConv = Number.isFinite(expectedConv) ? Math.max(0, expectedConv - limitedAgg.conv) : null
+    const controlAov = ratio(controlAgg.revenue, controlAgg.conv)
+    const estimatedLoss = Number.isFinite(lostConv) && Number.isFinite(controlAov) ? lostConv * controlAov : null
+    const coverage = limitMeta.coverageRate || 0
+    dom.banCoverageHint.textContent = `限制表匹配 ${limitMeta.matchedRows}/${scopedRows.length} 条当前明细，覆盖率 ${formatPct(coverage)}；对照组为当前筛选范围内已匹配的未封号班级。`
+    const metrics = [
+      ["封号班级", limitedAgg.count, "个"],
+      ["班级封号率", ratio(banUniqueRows(limitedAll).length, banUniqueRows(matched).length), "pct"],
+      ["受影响添加", limitedAgg.adds, "人"],
+      ["封号班级ROI", limitedAgg.roi, "roi"],
+      ["对照班级ROI", controlAgg.roi, "roi"],
+      ["ROI差值", roiGap, "signedRoi"],
+      ["转率差值", convGap, "pp"],
+      ["估算流水缺口", estimatedLoss, "money"]
+    ]
+    dom.banImpactMetrics.innerHTML = metrics.map(([label, value, type]) => `<div class="metric-card"><span>${label}</span><strong class="${Number.isFinite(value) && value < 0 ? "td-bad" : ""}">${type === "pct" ? formatPct(value) : type === "roi" ? formatNum(value, 2) : type === "signedRoi" ? `${value >= 0 ? "+" : ""}${formatNum(value, 2)}` : type === "pp" ? `${value >= 0 ? "+" : ""}${Number.isFinite(value) ? (value * 100).toFixed(1) : "-"}pp` : type === "money" ? formatMoney(value) : `${formatNum(value, 0)}${type}`}</strong></div>`).join("")
+
+    const distribution = BAN_DAY_KEYS.map((day) => ({ day, count: banUniqueRows(limitedAll.filter((row) => row._首次封号日 === day)).length, limits: sum(limitedAll.map((row) => row[`_${day}限制数`])) }))
+    Plotly.newPlot(dom.banDayDistribution, [{ type: "bar", name: "封号班级数", x: distribution.map((item) => item.day.replace("day", "Day")), y: distribution.map((item) => item.count), marker: { color: distribution.map((item) => state.ui.banDay === item.day ? "#dc2626" : "rgba(245,158,11,.65)") }, text: distribution.map((item) => item.count || ""), textposition: "outside" }], baseLayout({ margin: { l: 45, r: 20, t: 24, b: 55 }, showlegend: false, yaxis: { title: "班级数", rangemode: "tozero", gridcolor: PLOT_GRID }, xaxis: fullCategoryAxis(distribution.map((item) => item.day.replace("day", "Day"))) }), plotConfig)
+
+    const conversionFields = [3, 4, 5, 6, 7].map((day) => `day${day}转率`)
+    const conversion = banComparisonSeries(limitedAgg, controlAgg, conversionFields)
+    const dayLabels = ["Day3", "Day4", "Day5", "Day6", "Day7"]
+    const eventDay = state.ui.banDay === "全部" ? null : banDayNumber(state.ui.banDay)
+    dom.banCompareHint.textContent = `${state.ui.banDay === "全部" ? "全部封号班级" : `${state.ui.banDay.replace("day", "Day")}封号班级`} vs 当前筛选范围未封号班级；虚线标记封号发生日。`
+    const eventShape = Number.isFinite(eventDay) && eventDay >= 3 ? [{ type: "line", x0: `Day${eventDay}`, x1: `Day${eventDay}`, yref: "paper", y0: 0, y1: 1, line: { color: "#dc2626", dash: "dash", width: 2 } }] : []
+    Plotly.newPlot(dom.banConversionTrend, withValueLabels([
+      { type: "scatter", mode: "lines+markers", name: "封号班级", x: dayLabels, y: conversion.map((item) => item.cohort), line: { color: "#dc2626", width: 3 } },
+      { type: "scatter", mode: "lines+markers", name: "未封号对照", x: dayLabels, y: conversion.map((item) => item.control), line: { color: "#2563eb", width: 2 } }
+    ], formatChartPercent2), baseLayout({ xaxis: fullCategoryAxis(dayLabels), yaxis: { tickformat: ".2%", gridcolor: PLOT_GRID }, shapes: eventShape }), plotConfig)
+    const gaps = conversion.map((item) => insightDelta(item.cohort, item.control))
+    Plotly.newPlot(dom.banConversionGap, withValueLabels([{ type: "bar", name: "转率差值", x: dayLabels, y: gaps, marker: { color: gaps.map((value) => value < 0 ? "#ef4444" : "#22c55e") } }], (value) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}pp`), baseLayout({ showlegend: false, xaxis: fullCategoryAxis(dayLabels), yaxis: { tickformat: ".2%", zeroline: true, zerolinecolor: "#475569", gridcolor: PLOT_GRID }, shapes: eventShape }), plotConfig)
+
+    const pendingFields = [3, 4, 5, 6, 7].map((day) => `day${day}待支付率`)
+    const pending = banComparisonSeries(limitedAgg, controlAgg, pendingFields)
+    Plotly.newPlot(dom.banPendingTrend, withValueLabels([
+      { type: "scatter", mode: "lines+markers", name: "封号班级", x: dayLabels, y: pending.map((item) => item.cohort), line: { color: "#dc2626", width: 3 } },
+      { type: "scatter", mode: "lines+markers", name: "未封号对照", x: dayLabels, y: pending.map((item) => item.control), line: { color: "#2563eb", width: 2 } }
+    ], formatChartPercent), baseLayout({ xaxis: fullCategoryAxis(dayLabels), yaxis: { tickformat: ".1%", gridcolor: PLOT_GRID }, shapes: eventShape }), plotConfig)
+    const pendingGaps = pending.map((item) => insightDelta(item.cohort, item.control))
+    Plotly.newPlot(dom.banPendingGap, withValueLabels([{ type: "bar", name: "待支付率差值", x: dayLabels, y: pendingGaps, marker: { color: pendingGaps.map((value) => value > 0 ? "#ef4444" : "#22c55e") } }], (value) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}pp`), baseLayout({ showlegend: false, xaxis: fullCategoryAxis(dayLabels), yaxis: { tickformat: ".1%", zeroline: true, zerolinecolor: "#475569", gridcolor: PLOT_GRID }, shapes: eventShape }), plotConfig)
+
+    const postStart = Number.isFinite(eventDay) ? Math.max(3, eventDay + 1) : 3
+    const postIndexes = [3, 4, 5, 6, 7].map((day, index) => ({ day, index })).filter((item) => item.day >= postStart)
+    const postGap = sum(postIndexes.map((item) => gaps[item.index]))
+    dom.banPostImpact.innerHTML = `<div><span>封号后观察窗口</span><strong>${postStart > 7 ? "暂无后续Day" : `Day${postStart}-Day7`}</strong></div><div><span>后续转率差值合计</span><strong class="${postGap < 0 ? "td-bad" : "td-good"}">${Number.isFinite(postGap) ? `${postGap >= 0 ? "+" : ""}${(postGap * 100).toFixed(2)}pp` : "-"}</strong></div><div><span>估算少转化</span><strong>${Number.isFinite(lostConv) ? `${formatNum(lostConv, 1)}人` : "-"}</strong></div><div><span>估算流水缺口</span><strong>${formatMoney(estimatedLoss)}</strong></div>`
+
+    const processSpecs = [
+      { title: "到播率", suffix: "到播", start: 1, end: 5, lowerBad: true },
+      { title: "留存率", suffix: "留存", start: 1, end: 5, lowerBad: true },
+      { title: "班长回复率", suffix: "回复", start: 1, end: 7, lowerBad: true }
+    ]
+    dom.banProcessCharts.innerHTML = processSpecs.map((spec, index) => `<div class="chart-card"><div class="chart-card-title">${spec.title}</div><div id="banProcessChart${index}" class="chart"></div></div>`).join("")
+    processSpecs.forEach((spec, index) => {
+      const labels = Array.from({ length: spec.end - spec.start + 1 }, (_, i) => `Day${spec.start + i}`)
+      const fields = labels.map((_, i) => `day${spec.start + i}${spec.suffix}`)
+      const series = banComparisonSeries(limitedAgg, controlAgg, fields)
+      Plotly.newPlot(`banProcessChart${index}`, [
+        { type: "scatter", mode: "lines+markers", name: "封号班级", x: labels, y: series.map((item) => item.cohort), line: { color: "#dc2626", width: 2 } },
+        { type: "scatter", mode: "lines+markers", name: "未封号对照", x: labels, y: series.map((item) => item.control), line: { color: "#2563eb", width: 2 } }
+      ], baseLayout({ margin: { l: 48, r: 15, t: 20, b: 58 }, xaxis: fullCategoryAxis(labels), yaxis: { tickformat: ".1%", gridcolor: PLOT_GRID } }), plotConfig)
+    })
+
+    const meta = currentMeta()
+    const groupRows = Array.from(groupBy(cohort, (row) => String(row[meta.smallGroupField] || "未知小组").trim() || "未知小组").entries()).map(([name, rows]) => {
+      const comparisonRows = controls.filter((row) => String(row[meta.smallGroupField] || "未知小组").trim() === name)
+      const a = banAggregate(rows)
+      const b = banAggregate(comparisonRows.length ? comparisonRows : controls)
+      return { name, count: a.count, adds: a.adds, roi: a.roi, roiGap: insightDelta(a.roi, b.roi), convGap: insightDelta(a.convRate, b.convRate), estimatedLoss: Number.isFinite(b.convRate) ? Math.max(0, a.adds * b.convRate - a.conv) * (ratio(b.revenue, b.conv) || 0) : null }
+    }).sort((a, b) => (b.estimatedLoss || 0) - (a.estimatedLoss || 0))
+    renderTable(dom.banGroupTable, ["小组", "封号班级", "受影响添加", "封号ROI", "ROI差值", "转率差值", "估算流水缺口"], groupRows.map((item) => [item.name, item.count, formatNum(item.adds, 0), formatNum(item.roi, 2), Number.isFinite(item.roiGap) ? `${item.roiGap >= 0 ? "+" : ""}${formatNum(item.roiGap, 2)}` : "-", Number.isFinite(item.convGap) ? `${item.convGap >= 0 ? "+" : ""}${(item.convGap * 100).toFixed(1)}pp` : "-", formatMoney(item.estimatedLoss)]))
+    const detailSource = state.ui.banDay === "全部" ? matched : [...cohort, ...controls]
+    const detailRows = banUniqueRows(detailSource).sort((a, b) => {
+      const statusOrder = banStatusLabel(b).localeCompare(banStatusLabel(a), "zh-Hans-CN")
+      if (statusOrder) return statusOrder
+      const dayOrder = (banDayNumber(a._首次封号日) ?? 99) - (banDayNumber(b._首次封号日) ?? 99)
+      if (dayOrder) return dayOrder
+      return (rowAdds(b) || 0) - (rowAdds(a) || 0)
+    }).slice(0, 160)
+    const limitDayColumns = [0, 1, 2, 3, 4, 5, 6, 7].map((day) => `day${day}限制数`)
+    renderTable(
+      dom.banDetailTable,
+      ["班级", "班长姓名", "项目", "营期", "限制情况", "限制日", ...limitDayColumns.map((col) => col.replace("限制数", "限制")), "添加人数", "转化人数", "ROI", "转率", "day3转率", "day4转率", "day5转率", "day6转率", "day7转率"],
+      detailRows.map((row) => [
+        banClassDisplay(row, meta),
+        row._标准班长 || row[meta.leaderField] || "",
+        normalizeProjectName(row[meta.projectField]),
+        row[meta.campField],
+        banStatusPill(row),
+        banDayPill(row._首次封号日 || "未知"),
+        ...[0, 1, 2, 3, 4, 5, 6, 7].map((day) => banLimitCountCell(row[`_day${day}限制数`])),
+        formatNum(rowAdds(row), 0),
+        formatNum(rowConv(row), 0),
+        formatNum(ratio(rowRevenue(row), rowCost(row)), 2),
+        formatPct(ratio(rowConv(row), rowAdds(row))),
+        ...[3, 4, 5, 6, 7].map((day) => banRateHeatCell(firstMetric(row, null, [`day${day}转率`])))
+      ])
+    )
+
+    const preFields = Number.isFinite(eventDay) && eventDay > 1 ? Array.from({ length: Math.min(eventDay - 1, 5) }, (_, i) => `day${i + 1}到播`) : []
+    const preGap = avg(preFields.map((field) => insightDelta(banMetricValue(limitedAgg, field), banMetricValue(controlAgg, field))).filter(Number.isFinite))
+    const timingText = Number.isFinite(preGap) && preGap < -0.03 ? "封号前到播表现已经偏低，最终差异不能全部归因于封号" : "封号前暂未发现明显的到播劣势，封号后的转化变化更值得关注"
+    const topGroup = groupRows[0]
+    const insight = `${state.ui.banDay === "全部" ? "当前封号班级" : `${state.ui.banDay.replace("day", "Day")}封号班级`}共${limitedAgg.count}个，覆盖添加人数${formatNum(limitedAgg.adds, 0)}人；ROI为${formatNum(limitedAgg.roi, 2)}，较未封号对照${Number.isFinite(roiGap) ? `${roiGap >= 0 ? "高" : "低"}${formatNum(Math.abs(roiGap), 2)}` : "暂无有效差值"}。${timingText}。${topGroup ? `${topGroup.name}估算流水缺口最大，约${formatMoney(topGroup.estimatedLoss)}。` : "当前暂无可定位的小组影响。"}`
+    dom.banInsightText.innerHTML = `<strong>策略洞察</strong><p>${insightEscape(insight)}</p><small>差异与缺口均基于当前筛选范围内已匹配的未封号班级估算，不代表严格因果关系。</small>`
+    state.ui.banInsightCopyText = `【封号影响分析｜${state.ui.banDay === "全部" ? "全部封号日" : state.ui.banDay.replace("day", "Day")}】\n\n${insight}\n\n关键指标：\n- 封号班级：${limitedAgg.count}个\n- 受影响添加：${formatNum(limitedAgg.adds, 0)}人\n- 封号班级ROI：${formatNum(limitedAgg.roi, 2)}\n- 对照班级ROI：${formatNum(controlAgg.roi, 2)}\n- 转率差值：${Number.isFinite(convGap) ? `${(convGap * 100).toFixed(1)}pp` : "-"}\n- 估算流水缺口：${formatMoney(estimatedLoss)}\n\n重点小组：\n${groupRows.slice(0, 3).map((item, i) => `${i + 1}. ${item.name}：估算缺口${formatMoney(item.estimatedLoss)}`).join("\n") || "暂无"}\n\n说明：基于可比未封号班级估算，不代表严格因果关系。`
   }
 
   function renderProjectCompareSection(camps, scopedRows) {
@@ -3894,13 +4416,37 @@ ${anomalyLines}
   }
 
   function buildClassTierCompareRows(classes) {
-    const leaderRows = aggregateLeaderRows(classes)
-    const leaderTierMap = new Map(leaderRows.map((item) => [item.className, roiTier(item.roi)]))
+    const leaderRows = buildScopedLeaderRecords(classes)
+    const leaderTierMap = new Map(leaderRows.map((item) => [item.key, roiTier(item.roi)]))
+    const leaderBuckets = groupBy(classes, leaderLookupKey)
     const tierOrder = ["头部", "中部", "尾部"]
     return tierOrder.map((tier) => {
-      const bucket = classes.filter((item) => leaderTierMap.get(item.className) === tier)
+      const bucket = classes.filter((item) => leaderTierMap.get(leaderLookupKey(item)) === tier)
       const aggregate = buildSnapshotAggregateItem(bucket, tier)
+      const leaders = leaderRows
+        .filter((item) => leaderTierMap.get(item.key) === tier)
+        .map((item) => {
+          const leaderBucket = leaderBuckets.get(item.key) || []
+          const leaderAggregate = buildSnapshotAggregateItem(leaderBucket, item.className, item.className)
+          return {
+            key: item.key,
+            className: item.className,
+            groupName: item.groupName || "未知大组",
+            smallGroupName: item.smallGroupName || "未知小组",
+            campCount: item.campCount,
+            item: leaderAggregate,
+            metrics: leaderAggregate?.metrics || {},
+            day3OrderShare: dayOrderShareFromBucket(leaderBucket, 3),
+            day4OrderShare: dayOrderShareFromBucket(leaderBucket, 4),
+            day5OrderShare: dayOrderShareFromBucket(leaderBucket, 5),
+            day6OrderShare: dayOrderShareFromBucket(leaderBucket, 6),
+            day7OrderShare: dayOrderShareFromBucket(leaderBucket, 7)
+          }
+        })
+        .filter((item) => item.item)
+        .sort((a, b) => (b.metrics.roi || -Infinity) - (a.metrics.roi || -Infinity) || a.className.localeCompare(b.className, "zh-CN"))
       return {
+        key: `leader-tier__${tier}`,
         tier,
         item: aggregate,
         metrics: aggregate?.metrics || {},
@@ -3908,41 +4454,101 @@ ${anomalyLines}
         day4OrderShare: dayOrderShareFromBucket(bucket, 4),
         day5OrderShare: dayOrderShareFromBucket(bucket, 5),
         day6OrderShare: dayOrderShareFromBucket(bucket, 6),
-        day7OrderShare: dayOrderShareFromBucket(bucket, 7)
+        day7OrderShare: dayOrderShareFromBucket(bucket, 7),
+        leaders
       }
     })
   }
 
-  function renderClassTierCompareTable(rows) {
-    if (!dom.classTierCompareTable) return
-    const visibleRows = rows.filter((row) => row.item)
-    renderTable(dom.classTierCompareTable, [
-      "能力分层", "班长数", "机器号数", "人效", "升班率", "客单价", "添加人数", "转化人数",
-      "Day3占比", "Day4占比", "Day5占比", "Day6占比", "Day7占比",
-      "添加成本", "添加产值", "ROI", "转率", "个销占比", "待支付率", "待支付转率", "回复时长"
-    ], visibleRows.map((row) => [
-      row.tier,
-      Number.isFinite(row.metrics.leaderCount) ? String(Math.round(row.metrics.leaderCount)) : "-",
-      Number.isFinite(row.metrics.machineSlots) ? String(Math.round(row.metrics.machineSlots)) : "-",
-      Number.isFinite(row.metrics.personEfficiency) ? String(Math.round(row.metrics.personEfficiency)) : "-",
-      formatPct(row.metrics.upgradeRate),
-      formatMoney(row.metrics.aov),
-      Number.isFinite(row.metrics.adds) ? String(Math.round(row.metrics.adds)) : "-",
-      Number.isFinite(row.metrics.conv) ? String(Math.round(row.metrics.conv)) : "-",
+  function classTierCompareMetricCells(row, isLeader = false) {
+    const metrics = row.metrics || {}
+    return [
+      isLeader ? "1" : (Number.isFinite(metrics.leaderCount) ? String(Math.round(metrics.leaderCount)) : "-"),
+      Number.isFinite(metrics.machineSlots) ? String(Math.round(metrics.machineSlots)) : "-",
+      Number.isFinite(metrics.personEfficiency) ? String(Math.round(metrics.personEfficiency)) : "-",
+      formatPct(metrics.upgradeRate),
+      formatMoney(metrics.aov),
+      Number.isFinite(metrics.adds) ? String(Math.round(metrics.adds)) : "-",
+      Number.isFinite(metrics.conv) ? String(Math.round(metrics.conv)) : "-",
       formatPct(row.day3OrderShare),
       formatPct(row.day4OrderShare),
       formatPct(row.day5OrderShare),
       formatPct(row.day6OrderShare),
       formatPct(row.day7OrderShare),
-      formatMoney(row.metrics.addCost),
-      formatMoney(row.metrics.addRevenue),
-      formatNum(row.metrics.roi, 2),
-      formatPct(row.metrics.convRate),
-      formatPct(row.metrics.individualShare),
-      formatPct(row.metrics.pendingRate),
-      formatPct(row.metrics.pendingConv),
-      formatNum(row.metrics.replyTime, 0)
-    ]))
+      formatMoney(metrics.addCost),
+      formatMoney(metrics.addRevenue),
+      formatNum(metrics.roi, 2),
+      formatPct(metrics.convRate),
+      formatPct(metrics.individualShare),
+      formatPct(metrics.pendingRate),
+      formatPct(metrics.pendingConv),
+      formatNum(metrics.replyTime, 0)
+    ]
+  }
+
+  function buildClassTierCompareFlatRows(rows, expandedKeys) {
+    const expanded = new Set(expandedKeys || [])
+    const flattened = []
+    rows.filter((row) => row.item).forEach((row) => {
+      flattened.push({
+        kind: "tier",
+        key: row.key,
+        expanded: expanded.has(row.key),
+        ...row
+      })
+      if (expanded.has(row.key)) {
+        ;(row.leaders || []).forEach((leader) => {
+          flattened.push({
+            kind: "leader",
+            parentKey: row.key,
+            ...leader
+          })
+        })
+      }
+    })
+    return flattened
+  }
+
+  function renderClassTierCompareTable(rows) {
+    if (!dom.classTierCompareTable) return
+    const visibleRows = buildClassTierCompareFlatRows(rows, state.ui.classTierCompareExpanded)
+    const headers = [
+      "能力分层", "班长数", "机器号数", "人效", "升班率", "客单价", "添加人数", "转化人数",
+      "Day3占比", "Day4占比", "Day5占比", "Day6占比", "Day7占比",
+      "添加成本", "添加产值", "ROI", "转率", "个销占比", "待支付率", "待支付转率", "回复时长"
+    ]
+    if (!visibleRows.length) {
+      dom.classTierCompareTable.innerHTML = `<div class="stack-item">当前筛选范围内暂无可展示数据。</div>`
+      return
+    }
+    dom.classTierCompareTable.innerHTML = `
+      <table class="tree-table class-type-compare-table">
+        <thead>
+          <tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${visibleRows.map((row) => {
+            const firstCell = row.kind === "tier"
+              ? `
+                <button class="tree-toggle-btn level-dimension" type="button" data-action="class-tier-compare-toggle" data-key="${row.key}">
+                  <span class="tree-toggle-icon">${row.expanded ? "▾" : "▸"}</span>
+                  <span class="tree-label-text">${row.tier}</span>
+                </button>
+              `
+              : `
+                <div class="tree-toggle-btn level-class leaf">
+                  <span class="tree-toggle-icon">•</span>
+                  <span class="tree-depth" style="width:10px"></span>
+                  <span class="tree-label-text">${row.className || "-"}</span>
+                </div>
+                <div class="type-compare-subtext">${row.smallGroupName || "-"}｜${row.groupName || "-"}｜覆盖${Number.isFinite(row.campCount) ? Math.round(row.campCount) : "-"}期</div>
+              `
+            const cells = classTierCompareMetricCells(row, row.kind === "leader")
+            return `<tr class="tree-row level-${row.kind === "tier" ? "dimension" : "class"}"><td>${firstCell}</td>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`
+          }).join("")}
+        </tbody>
+      </table>
+    `
   }
 
   function renderClassTierCompareSection(classes) {
@@ -5883,6 +6489,7 @@ ${anomalyLines}
     group: ["组织分析 / 大组分析", "比较大组差异，聚焦单个大组趋势并继续下钻到小组与班长。"],
     "small-group": ["组织分析 / 小组分析", "定位小组间差异，结合过程、转化和班长表现复盘。"],
     class: ["组织分析 / 班长分析", "从能力分层、班型结构、ROI和By-day表现识别具体执行差异。"],
+    "ban-impact": ["组织分析 / 封号影响", "按封号日比较班级封号前后By-day表现，定位受影响最大的小组和班级。"],
     quality: ["数据管理 / 数据健康", "检查关键字段、过程数据覆盖率与分析口径，确认结论可信度。"]
   }
 
@@ -6238,6 +6845,17 @@ ${anomalyLines}
       const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
       renderClassSection(scoped.classSnapshots)
     })
+    dom.classTierCompareTable?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='class-tier-compare-toggle']")
+      if (!button) return
+      const key = button.dataset.key || ""
+      const current = new Set(state.ui.classTierCompareExpanded || [])
+      if (current.has(key)) current.delete(key)
+      else current.add(key)
+      state.ui.classTierCompareExpanded = Array.from(current)
+      const scoped = buildSnapshotsFromRows(getScopedUnifiedRows(null), state.model.meta)
+      renderClassSection(scoped.classSnapshots)
+    })
 
     dom.campWarmDimensionSwitch?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-action='camp-warm-dimension']")
@@ -6254,6 +6872,20 @@ ${anomalyLines}
       const scopedRows = getScopedUnifiedRows(null)
       const scoped = buildSnapshotsFromRows(scopedRows, state.model.meta)
       renderCampSection(scoped.campSnapshots, scopedRows)
+    })
+
+    dom.campInsightOpenBtn?.addEventListener("click", openCampInsight)
+    dom.campInsightCloseBtn?.addEventListener("click", closeCampInsight)
+    dom.campInsightCopyBtn?.addEventListener("click", copyCampInsight)
+    dom.banInsightCopyBtn?.addEventListener("click", copyBanInsight)
+    dom.banDaySwitch?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='ban-day']")
+      if (!button) return
+      state.ui.banDay = button.dataset.value || "全部"
+      renderBanImpactSection(getScopedUnifiedRows(null))
+    })
+    dom.campInsightModal?.addEventListener("click", (event) => {
+      if (event.target === dom.campInsightModal) closeCampInsight()
     })
 
     document.addEventListener("click", (event) => {
@@ -6310,6 +6942,7 @@ ${anomalyLines}
     })
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !dom.chartModal?.classList.contains("hidden")) closeChartModal()
+      if (event.key === "Escape" && !dom.campInsightModal?.classList.contains("hidden")) closeCampInsight()
     })
   }
 
@@ -6341,6 +6974,389 @@ ${anomalyLines}
     return ordered
   }
 
+  function campOverviewVisibleRows() {
+    const dimension = state.ui.campViewDimension || "camp"
+    const scopedRows = getScopedUnifiedRows(null)
+    return {
+      dimension,
+      rows: buildCampOverviewFlatRows(scopedRows, dimension, state.ui.campOverviewExpanded)
+    }
+  }
+
+  function campOverviewHeaders() {
+    return [
+      "层级",
+      "ROI",
+      "转率",
+      "添加成本",
+      "添加产值",
+      "人均产能",
+      "个销占比",
+      "待支付率",
+      "待支付转率",
+      "出单节奏",
+      "客单价",
+      "人效",
+      "单号承载",
+      "高沉浸率",
+      "高沉浸转率",
+      "营期数",
+      "总流水",
+      "总转化人数",
+      "升班率",
+      "添加人数"
+    ]
+  }
+
+  function campOverviewLabel(node) {
+    const depthPrefix = node.depth > 0 ? `${"  ".repeat(node.depth)}${node.hasChildren ? "▸ " : ""}` : ""
+    return `${depthPrefix}${node.label}`
+  }
+
+  function campOverviewCsvRow(node) {
+    return {
+      层级: campOverviewLabel(node),
+      ROI: Number.isFinite(node.snapshot.metrics.roi) ? formatNum(node.snapshot.metrics.roi, 2) : "-",
+      转率: formatPct(node.snapshot.metrics.convRate),
+      添加成本: formatMoney(node.snapshot.metrics.addCost),
+      添加产值: formatMoney(node.snapshot.metrics.addRevenue),
+      人均产能: formatMoney(node.avgOutputPerLeader),
+      个销占比: formatPct(node.snapshot.metrics.individualShare),
+      待支付率: formatPct(node.snapshot.metrics.pendingRate),
+      待支付转率: formatPct(node.snapshot.metrics.pendingConv),
+      出单节奏: node.orderCounts.map((value) => Math.round(Number.isFinite(value) ? value : 0)).join(" / "),
+      客单价: formatMoney(node.snapshot.metrics.aov),
+      人效: Number.isFinite(node.snapshot.metrics.personEfficiency) ? formatNum(node.snapshot.metrics.personEfficiency, 0) : "-",
+      单号承载: Number.isFinite(node.snapshot.metrics.machineLoad) ? formatNum(node.snapshot.metrics.machineLoad, 0) : "-",
+      高沉浸率: formatPct(node.highImmerseRate),
+      高沉浸转率: formatPct(node.highImmerseConvRate),
+      营期数: Number.isFinite(node.snapshot.coveredCampCount) ? Math.round(node.snapshot.coveredCampCount) : "-",
+      总流水: formatMoney(node.snapshot.metrics.revenue),
+      总转化人数: Number.isFinite(node.snapshot.metrics.conv) ? Math.round(node.snapshot.metrics.conv) : "-",
+      升班率: formatPct(node.snapshot.metrics.upgradeRate),
+      添加人数: Number.isFinite(node.snapshot.metrics.adds) ? Math.round(node.snapshot.metrics.adds) : "-"
+    }
+  }
+
+  function downloadBlob(blob, filename) {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportCampOverviewCsv() {
+    if (!state.model) return
+    const { rows } = campOverviewVisibleRows()
+    if (!rows.length) return
+    const headers = campOverviewHeaders()
+    const content = [
+      headers.map(csvEscape).join(","),
+      ...rows.map((row) => {
+        const mapped = campOverviewCsvRow(row)
+        return headers.map((header) => csvEscape(mapped[header])).join(",")
+      })
+    ].join("\r\n")
+    const datePart = formatDate(state.filters.asOfDate).replace(/-/g, "")
+    const dimensionText = campViewDimensionText(state.ui.campViewDimension || "camp")
+    downloadBlob(new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8;" }), `营期分析_核心指标概览_${dimensionText}_${datePart}.csv`)
+  }
+
+  function roundedRectPath(ctx, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2)
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + width, y, x + width, y + height, r)
+    ctx.arcTo(x + width, y + height, x, y + height, r)
+    ctx.arcTo(x, y + height, x, y, r)
+    ctx.arcTo(x, y, x + width, y, r)
+    ctx.closePath()
+  }
+
+  function ellipsizeCanvasText(ctx, text, maxWidth) {
+    const raw = String(text || "").replace(/\s+/g, " ").trim()
+    if (!raw) return ""
+    if (ctx.measureText(raw).width <= maxWidth) return raw
+    const ellipsis = "…"
+    let left = 0
+    let right = raw.length
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2)
+      const candidate = `${raw.slice(0, mid)}${ellipsis}`
+      if (ctx.measureText(candidate).width <= maxWidth) left = mid + 1
+      else right = mid
+    }
+    return `${raw.slice(0, Math.max(1, left - 1))}${ellipsis}`
+  }
+
+  function styleWidthPercent(text) {
+    const match = String(text || "").match(/width\s*:\s*([\d.]+)%/)
+    if (!match) return null
+    const value = Number(match[1])
+    return Number.isFinite(value) ? value : null
+  }
+
+  function styleBackground(text) {
+    const match = String(text || "").match(/background\s*:\s*([^;]+)/)
+    return match ? match[1].trim() : ""
+  }
+
+  async function exportCampOverviewPng() {
+    if (!state.model || !dom.campOverviewTable) return
+    const table = dom.campOverviewTable.querySelector("table")
+    if (!table) return
+    const dimensionText = campViewDimensionText(state.ui.campViewDimension || "camp")
+    const button = dom.campOverviewExportPngBtn
+    const originalText = button?.textContent || "导出 PNG"
+    if (button) {
+      button.disabled = true
+      button.textContent = "生成中..."
+    }
+    try {
+      const rowEls = Array.from(table.querySelectorAll("tr"))
+      if (!rowEls.length) return
+      const colCount = rowEls[0].children.length
+      const colWidths = Array.from({ length: colCount }, (_, index) => {
+        const widths = rowEls.map((row) => {
+          const cell = row.children[index]
+          if (!(cell instanceof HTMLElement)) return 0
+          return Math.max(cell.getBoundingClientRect().width || 0, cell.scrollWidth || 0)
+        })
+        return Math.ceil(Math.max(...widths, index === 0 ? 200 : 96))
+      })
+
+      const outerPad = 24
+      const panelPad = 16
+      const headHeight = 64
+      const headerHeight = 42
+      const rowHeight = 44
+      const tableWidth = colWidths.reduce((sum, w) => sum + w, 0)
+      const tableHeight = headerHeight + Math.max(0, rowEls.length - 1) * rowHeight
+      const panelWidth = tableWidth + panelPad * 2
+      const panelHeight = headHeight + tableHeight + panelPad * 2
+      const width = panelWidth + outerPad * 2
+      const height = panelHeight + outerPad * 2
+
+      const ratioValue = Math.max(2, Math.min(3, window.devicePixelRatio || 2))
+      const canvas = document.createElement("canvas")
+      canvas.width = Math.round(width * ratioValue)
+      canvas.height = Math.round(height * ratioValue)
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
+      ctx.scale(ratioValue, ratioValue)
+
+      ctx.fillStyle = "#f5f7fb"
+      ctx.fillRect(0, 0, width, height)
+
+      const panelX = outerPad
+      const panelY = outerPad
+      ctx.save()
+      ctx.shadowColor = "rgba(15, 23, 42, 0.10)"
+      ctx.shadowBlur = 26
+      ctx.shadowOffsetY = 10
+      roundedRectPath(ctx, panelX, panelY, panelWidth, panelHeight, 22)
+      ctx.fillStyle = "rgba(255, 255, 255, 0.98)"
+      ctx.fill()
+      ctx.restore()
+
+      roundedRectPath(ctx, panelX, panelY, panelWidth, panelHeight, 22)
+      ctx.strokeStyle = "rgba(15, 23, 42, 0.12)"
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      const textX = panelX + panelPad
+      const textY = panelY + panelPad
+      ctx.fillStyle = "#94a3b8"
+      ctx.font = "800 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      ctx.fillText("核心概览", textX, textY + 12)
+      ctx.fillStyle = "#0f172a"
+      ctx.font = "700 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      ctx.fillText("核心指标概览", textX, textY + 36)
+      ctx.fillStyle = "#64748b"
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      ctx.fillText(`导出时间：${formatDate(state.filters.asOfDate)} · 当前视角：${dimensionText}`, textX, textY + 56)
+
+      const tableX = panelX + panelPad
+      const tableY = panelY + panelPad + headHeight
+
+      const lineColor = "rgba(15, 23, 42, 0.12)"
+      const headerBg = "#f8fafc"
+      const cellBg = "#ffffff"
+      const dimensionRowBg = "rgba(248, 250, 252, 0.92)"
+      const pillBg = "rgba(15, 23, 42, 0.06)"
+      const good = "#059669"
+      const warn = "#d97706"
+      const bad = "#dc2626"
+      const muted = "#64748b"
+
+      const barFillColors = {
+        blue: "rgba(37, 99, 235, 0.28)",
+        green: "rgba(34, 197, 94, 0.28)",
+        orange: "rgba(249, 115, 22, 0.28)",
+        purple: "rgba(139, 92, 246, 0.24)",
+        cyan: "rgba(6, 182, 212, 0.24)",
+        teal: "rgba(20, 184, 166, 0.24)",
+        gold: "rgba(245, 158, 11, 0.24)"
+      }
+
+      let y = tableY
+      rowEls.forEach((rowEl, rowIndex) => {
+        const isHeader = rowIndex === 0
+        const isDimensionRow = rowEl.classList.contains("level-dimension")
+        let x = tableX
+        Array.from(rowEl.children).forEach((cellEl, colIndex) => {
+          const widthCell = colWidths[colIndex]
+          const heightCell = isHeader ? headerHeight : rowHeight
+          let background = cellBg
+          if (isHeader) background = headerBg
+          else if (isDimensionRow) background = dimensionRowBg
+
+          const isFirst = colIndex === 0
+          if (!isHeader && isFirst) {
+            if (rowEl.classList.contains("level-group")) background = "rgba(37, 99, 235, 0.05)"
+            if (rowEl.classList.contains("level-smallGroup")) background = "rgba(14, 165, 233, 0.05)"
+            if (rowEl.classList.contains("level-class")) background = "rgba(15, 23, 42, 0.03)"
+          }
+
+          ctx.fillStyle = background
+          ctx.fillRect(x, y, widthCell, heightCell)
+          ctx.strokeStyle = lineColor
+          ctx.lineWidth = 1
+          ctx.strokeRect(x, y, widthCell, heightCell)
+
+          if (!isHeader && isFirst) {
+            if (rowEl.classList.contains("level-group")) {
+              ctx.fillStyle = "rgba(37, 99, 235, 0.30)"
+              ctx.fillRect(x, y, 3, heightCell)
+            }
+            if (rowEl.classList.contains("level-smallGroup")) {
+              ctx.fillStyle = "rgba(14, 165, 233, 0.24)"
+              ctx.fillRect(x, y, 3, heightCell)
+            }
+            if (rowEl.classList.contains("level-class")) {
+              ctx.fillStyle = "rgba(15, 23, 42, 0.12)"
+              ctx.fillRect(x, y, 3, heightCell)
+            }
+          }
+
+          const cell = cellEl instanceof HTMLElement ? cellEl : null
+          const centerY = y + heightCell / 2
+          if (cell) {
+            const pill = cell.querySelector(".metric-pill")
+            const dataBar = cell.querySelector(".data-bar-cell")
+            const rhythm = cell.querySelector(".order-rhythm-stack")
+            if (pill instanceof HTMLElement) {
+              const text = (pill.innerText || "").trim()
+              ctx.font = isHeader ? "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "700 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+              const w = Math.min(widthCell - 14, Math.max(56, ctx.measureText(text).width + 20))
+              const h = 24
+              const px = x + (widthCell - w) / 2
+              const py = centerY - h / 2
+              ctx.fillStyle = pillBg
+              roundedRectPath(ctx, px, py, w, h, 999)
+              ctx.fill()
+              ctx.fillStyle = pill.classList.contains("td-good") ? good : pill.classList.contains("td-warn") ? warn : pill.classList.contains("td-bad") ? bad : "#0f172a"
+              ctx.textAlign = "center"
+              ctx.textBaseline = "middle"
+              ctx.fillText(text, x + widthCell / 2, centerY + 0.5)
+              ctx.textAlign = "start"
+            } else if (dataBar instanceof HTMLElement) {
+              const fill = dataBar.querySelector(".data-bar-fill")
+              const label = dataBar.querySelector(".data-bar-text")
+              const percent = fill instanceof HTMLElement ? styleWidthPercent(fill.getAttribute("style")) : null
+              const toneKey = ["blue", "green", "orange", "purple", "cyan", "teal", "gold"].find((key) => dataBar.classList.contains(key)) || "blue"
+              const h = 26
+              const w = Math.min(widthCell - 14, Math.max(92, widthCell - 18))
+              const px = x + (widthCell - w) / 2
+              const py = centerY - h / 2
+              ctx.fillStyle = "rgba(148, 163, 184, 0.12)"
+              roundedRectPath(ctx, px, py, w, h, 999)
+              ctx.fill()
+              const ratio = percent === null ? 0 : Math.max(0, Math.min(1, percent / 100))
+              const fillW = Math.max(0, ratio * w)
+              ctx.fillStyle = barFillColors[toneKey] || barFillColors.blue
+              roundedRectPath(ctx, px, py, fillW, h, 999)
+              ctx.fill()
+              ctx.fillStyle = "#0f172a"
+              ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+              ctx.textAlign = "center"
+              ctx.textBaseline = "middle"
+              ctx.fillText((label?.innerText || dataBar.innerText || "").trim(), x + widthCell / 2, centerY + 0.5)
+              ctx.textAlign = "start"
+            } else if (rhythm instanceof HTMLElement) {
+              const h = 30
+              const w = Math.min(widthCell - 14, Math.max(180, widthCell - 18))
+              const px = x + (widthCell - w) / 2
+              const py = centerY - h / 2
+              ctx.fillStyle = "rgba(15, 23, 42, 0.06)"
+              roundedRectPath(ctx, px, py, w, h, 10)
+              ctx.fill()
+              const segments = Array.from(rhythm.querySelectorAll(".order-rhythm-segment"))
+              let sx = px
+              segments.forEach((seg) => {
+                if (!(seg instanceof HTMLElement)) return
+                const pct = styleWidthPercent(seg.getAttribute("style")) || 0
+                const segW = (pct / 100) * w
+                if (segW <= 0) return
+                ctx.fillStyle = styleBackground(seg.getAttribute("style")) || "#94a3b8"
+                ctx.fillRect(sx, py, segW, h)
+                const labelText = (seg.innerText || "").trim()
+                if (labelText) {
+                  ctx.fillStyle = "rgba(255, 255, 255, 0.96)"
+                  ctx.font = "700 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                  ctx.textAlign = "center"
+                  ctx.textBaseline = "middle"
+                  ctx.fillText(labelText, sx + segW / 2, centerY)
+                  ctx.textAlign = "start"
+                }
+                sx += segW
+              })
+            } else {
+              const rawText = (cell.innerText || "").replace(/\s+/g, " ").trim()
+              ctx.fillStyle = isHeader ? muted : "#0f172a"
+              ctx.font = isHeader ? "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+              ctx.textBaseline = "middle"
+              if (colIndex === 0) {
+                const max = widthCell - 18
+                const text = ellipsizeCanvasText(ctx, rawText, max)
+                ctx.fillText(text, x + 10, centerY + 0.5)
+              } else {
+                const max = widthCell - 12
+                const text = ellipsizeCanvasText(ctx, rawText, max)
+                ctx.textAlign = "center"
+                ctx.fillText(text, x + widthCell / 2, centerY + 0.5)
+                ctx.textAlign = "start"
+              }
+            }
+          }
+
+          x += widthCell
+        })
+        y += isHeader ? headerHeight : rowHeight
+      })
+
+      const datePart = formatDate(state.filters.asOfDate).replace(/-/g, "")
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"))
+      downloadBlob(blob, `营期分析_核心指标概览_${dimensionText}_${datePart}.png`)
+      if (button) {
+        button.textContent = "已导出"
+        setTimeout(() => { button.textContent = originalText }, 1600)
+      }
+    } catch (error) {
+      if (button) {
+        button.textContent = "导出失败"
+        setTimeout(() => { button.textContent = originalText }, 2200)
+      }
+    } finally {
+      if (button) button.disabled = false
+    }
+  }
+
   function exportPreprocessedCsv() {
     if (!state.model) return
     const rows = getScopedUnifiedRows(null)
@@ -6351,20 +7367,16 @@ ${anomalyLines}
       ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(","))
     ].join("\r\n")
     const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
     const datePart = formatDate(state.filters.asOfDate).replace(/-/g, "")
-    link.href = url
-    link.download = `预处理数据_${datePart}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, `预处理数据_${datePart}.csv`)
   }
 
   dom.fileClass.addEventListener("change", (event) => onFileChange("class", event))
+  dom.fileLimit?.addEventListener("change", (event) => onFileChange("limit", event))
   dom.startAnalysisBtn.addEventListener("click", onStartAnalysis)
   dom.exportCsvBtn.addEventListener("click", exportPreprocessedCsv)
+  dom.campOverviewExportCsvBtn?.addEventListener("click", exportCampOverviewCsv)
+  dom.campOverviewExportPngBtn?.addEventListener("click", exportCampOverviewPng)
   dom.toggleSidebarBtn?.addEventListener("click", () => {
     state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed
     renderSidebarState()
@@ -6375,6 +7387,12 @@ ${anomalyLines}
   })
   dom.applyFiltersBtn?.addEventListener("click", applyFilters)
   window.addEventListener("resize", resizeVisiblePlots)
+  if ("ResizeObserver" in window) {
+    const plotResizeObserver = new ResizeObserver((entries) => {
+      if (entries.some((entry) => entry.contentRect.width > 80 && entry.contentRect.height > 80)) resizeVisiblePlots()
+    })
+    document.querySelectorAll(".tab-panel, .chart, .dashboard-main").forEach((el) => plotResizeObserver.observe(el))
+  }
   bindTabs()
   bindCampDrillEvents()
   renderImportState()
